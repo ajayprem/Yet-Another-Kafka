@@ -1,8 +1,14 @@
 package main
 
 import (
+	utils "Yet-Another-Kafka/Utils"
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"net"
+	"log"
+	"net/http"
+	"os"
 )
 
 const (
@@ -11,20 +17,44 @@ const (
 	SERVER_TYPE = "tcp"
 )
 
-func main() {
-	//establish connection
-	connection, err := net.Dial(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
+// type CreateTopicCommand struct {
+// 	fs         *flag.FlagSet
+// 	topicName  string
+// 	partitions int
+// }
 
-	if err != nil {
-		panic(err)
+func main() {
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Print(">")
+		scanner.Scan()
+		err := scanner.Err()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		requestURL := fmt.Sprintf("http://localhost:%d/produce", 9988)
+
+		var body utils.ProduceCommand
+		body.TopicName = "bleh"
+		body.Partitions = 0
+		body.Message = scanner.Text()
+		jsonBody, _ := json.Marshal(body)
+		bodyReader := bytes.NewReader(jsonBody)
+
+		req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
+		if err != nil {
+			fmt.Printf("client: could not create request: %s\n", err)
+			os.Exit(1)
+		}
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			fmt.Printf("client: error making http request: %s\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("client: got response!\n")
+		fmt.Printf("client: status code: %d\n", res.StatusCode)
 	}
-	///send some data
-	_, err = connection.Write([]byte("create-topic"))
-	buffer := make([]byte, 1024)
-	mLen, err := connection.Read(buffer)
-	if err != nil {
-		fmt.Println("Error reading:", err.Error())
-	}
-	fmt.Println("Received: ", string(buffer[:mLen]))
-	defer connection.Close()
 }

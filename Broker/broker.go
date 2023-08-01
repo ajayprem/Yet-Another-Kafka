@@ -2,67 +2,82 @@
 package main
 
 import (
+	utils "Yet-Another-Kafka/Utils"
+	"encoding/json"
 	"fmt"
 	"log"
-	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/gorilla/mux"
 )
 
 const (
 	SERVER_HOST = "localhost"
 	SERVER_PORT = "9988"
 	SERVER_TYPE = "tcp"
+	BROKER_ID   = 0
+	PARTITIONS  = 0
 )
 
-func main() {
-	fmt.Println("Starting Broker...")
-	server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
+type record struct{
+	offset int 
+	message string
+}
 
-	if err != nil {
-		fmt.Println("Error listening:", err.Error())
-		os.Exit(1)
-	}
-
-	defer server.Close()
-
-	fmt.Println("Listening on " + SERVER_HOST + ":" + SERVER_PORT)
-	for {
-		connection, err := server.Accept()
-		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			os.Exit(1)
+func createTopic(topicName string, partitions int) *os.File {
+	topicDir := filepath.Join("tmp", topicName + "0")
+	if _, err := os.Stat(topicDir); os.IsNotExist(err) {
+		if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
+			log.Fatal(err)
 		}
-		fmt.Println("Received Request")
-		go processClient(connection)
+		file, err := os.Create(topicDir + "test.log")
+		if err != nil {
+			log.Fatalf("Failed creating file: %s", err)
+		}
+		return file;
 	}
-}
-
-func createTopic(topicName string) {
-	topicDir := filepath.Join("Topics", topicName)
-	if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
-		log.Fatal(err)
-		fmt.Println(err)
-	}
-}
-
-func processClient(connection net.Conn) {
-	buffer := make([]byte, 1024)
-	mLen, err := connection.Read(buffer)
-
+	file, err := os.OpenFile(topicDir + "test.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Println("Error reading:", err.Error())
+		log.Fatalf("Failed creating file: %s", err)
 	}
-
-	fmt.Println("Received: ", string(buffer[:mLen]))
-
-	operation := string(buffer[:mLen])
-
-	if operation == "create-topic" {
-		createTopic("Henlo")
-		connection.Write([]byte("T"))
-	} else {
-		connection.Write([]byte("Operation Not Found"))
-	}
-	connection.Close()
+	return file
 }
+
+func ProduceHandler(w http.ResponseWriter, r *http.Request) {
+	var command utils.ProduceCommand
+	_ = json.NewDecoder(r.Body).Decode(&command)
+	fmt.Println(command.Message)
+	// createTopic(command.TopicName, command.Partitions)
+	w.Header().Set("Content-Type", "application/json")
+
+}
+
+func ConsumeHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func main() {
+	createTopic("bleh", 0)
+	createTopic("bleh", 0)
+	fmt.Println("Starting Broker id:", BROKER_ID)
+	r := mux.NewRouter()
+	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
+	r.HandleFunc("/consume", ConsumeHandler)
+
+	log.Fatal(http.ListenAndServe(":9988", r))
+}
+
+// func process(connection net.Conn) {
+
+// 	for {
+// 		message, err := bufio.NewReader(connection).ReadString('\n')
+// 		if err != nil {
+// 			log.Printf("Error: %+v", err.Error())
+// 			return
+// 		}
+
+// 		log.Println("Message:", string(message))
+// 	}
+// }
