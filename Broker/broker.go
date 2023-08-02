@@ -3,6 +3,7 @@ package main
 
 import (
 	utils "Yet-Another-Kafka/Utils"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,53 +15,58 @@ import (
 )
 
 const (
-	SERVER_HOST = "localhost"
-	SERVER_PORT = "9988"
-	SERVER_TYPE = "tcp"
-	BROKER_ID   = 0
-	PARTITIONS  = 0
+	BROKER_ID     = 0
+	PARTITIONS    = 0
+	LOGS_LOCATION = "/tmp"
 )
 
-type record struct{
-	offset int 
-	message string
-}
-
 func createTopic(topicName string, partitions int) *os.File {
-	topicDir := filepath.Join("tmp", topicName + "0")
+	topicDir := filepath.Join("tmp", topicName+"0")
+
 	if _, err := os.Stat(topicDir); os.IsNotExist(err) {
 		if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
 			log.Fatal(err)
 		}
-		file, err := os.Create(topicDir + "test.log")
+		file, err := os.Create(filepath.Join(topicDir, "log.txt"))
 		if err != nil {
 			log.Fatalf("Failed creating file: %s", err)
 		}
-		return file;
+		return file
 	}
-	file, err := os.OpenFile(topicDir + "test.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filepath.Join(topicDir, "log.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("Failed creating file: %s", err)
+		log.Fatalf("Failed opening file: %s", err)
 	}
 	return file
 }
 
 func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 	var command utils.ProduceCommand
-	_ = json.NewDecoder(r.Body).Decode(&command)
-	fmt.Println(command.Message)
-	// createTopic(command.TopicName, command.Partitions)
-	w.Header().Set("Content-Type", "application/json")
+	json.NewDecoder(r.Body).Decode(&command)
 
+	file := createTopic(command.TopicName, 0)
+	defer file.Close()
+
+	datawriter := bufio.NewWriter(file)
+	_, err := datawriter.WriteString(command.Message + "\n")
+	if err != nil {
+		log.Fatalf("Unable to write to file: %s", err)
+	}
+	datawriter.Flush()
+
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func ConsumeHandler(w http.ResponseWriter, r *http.Request) {
+	var command utils.ConsumeCommand
+	json.NewDecoder(r.Body).Decode(&command)
+
+	file := createTopic(command.TopicName, 0)
+	defer file.Close()
 
 }
 
 func main() {
-	createTopic("bleh", 0)
-	createTopic("bleh", 0)
 	fmt.Println("Starting Broker id:", BROKER_ID)
 	r := mux.NewRouter()
 	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
@@ -68,16 +74,3 @@ func main() {
 
 	log.Fatal(http.ListenAndServe(":9988", r))
 }
-
-// func process(connection net.Conn) {
-
-// 	for {
-// 		message, err := bufio.NewReader(connection).ReadString('\n')
-// 		if err != nil {
-// 			log.Printf("Error: %+v", err.Error())
-// 			return
-// 		}
-
-// 		log.Println("Message:", string(message))
-// 	}
-// }

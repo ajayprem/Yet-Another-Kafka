@@ -18,6 +18,10 @@ const (
 	SERVER_TYPE = "tcp"
 )
 
+var (
+	URL = fmt.Sprintf("http://localhost:%d/produce", 9988)
+)
+
 func main() {
 	var TopicName string
 	var Partition int
@@ -35,8 +39,6 @@ func main() {
 			log.Fatal(err)
 		}
 
-		requestURL := fmt.Sprintf("http://localhost:%d/produce", 9988)
-
 		var body utils.ProduceCommand
 		body.TopicName = TopicName
 		body.Partitions = 0
@@ -44,7 +46,7 @@ func main() {
 		jsonBody, _ := json.Marshal(body)
 		bodyReader := bytes.NewReader(jsonBody)
 
-		req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
+		req, err := http.NewRequest(http.MethodPost, URL, bodyReader)
 		if err != nil {
 			fmt.Printf("client: could not create request: %s\n", err)
 			os.Exit(1)

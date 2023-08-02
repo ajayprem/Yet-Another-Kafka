@@ -1,9 +1,45 @@
-package consumer
+package main
 
-func ConsumeFromTopic() {
+import (
+	utils "Yet-Another-Kafka/Utils"
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+)
 
-}
+var (
+	URL = fmt.Sprintf("http://localhost:%d/consume", 9988)
+)
 
-func RegisterToTopic() {
+func main() {
+	var TopicName string
+	var Partition int
+	flag.StringVar(&TopicName, "topic", "default", "Name of the topic to be created")
+	flag.IntVar(&Partition, "partition", 0, "Partition to write to")
+	flag.Parse()
 
+	for {
+		var body utils.ConsumeCommand
+		body.TopicName = TopicName
+		body.Partitions = 0
+
+		jsonBody, _ := json.Marshal(body)
+		bodyReader := bytes.NewReader(jsonBody)
+
+		req, err := http.NewRequest(http.MethodPost, URL, bodyReader)
+		if err != nil {
+			fmt.Printf("client: could not create request: %s\n", err)
+			os.Exit(1)
+		}
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			fmt.Printf("client: error making http request: %s\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("client: status code: %d\n", res.StatusCode)
+	}
 }
