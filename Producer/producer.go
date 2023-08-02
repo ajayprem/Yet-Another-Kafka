@@ -53,8 +53,6 @@ func main() {
 			fmt.Printf("client: error making http request: %s\n", err)
 			os.Exit(1)
 		}
-
-		fmt.Printf("client: got response!\n")
 		fmt.Printf("client: status code: %d\n", res.StatusCode)
 	}
 }
