@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,13 +18,14 @@ const (
 	SERVER_TYPE = "tcp"
 )
 
-// type CreateTopicCommand struct {
-// 	fs         *flag.FlagSet
-// 	topicName  string
-// 	partitions int
-// }
-
 func main() {
+	var TopicName string
+	var Partition int
+	flag.StringVar(&TopicName, "topic", "default", "Name of the topic to be created")
+	flag.IntVar(&Partition, "partition", 0, "Partition to write to")
+	flag.Parse()
+	fmt.Println(TopicName)
+
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print(">")
@@ -36,7 +38,7 @@ func main() {
 		requestURL := fmt.Sprintf("http://localhost:%d/produce", 9988)
 
 		var body utils.ProduceCommand
-		body.TopicName = "bleh"
+		body.TopicName = TopicName
 		body.Partitions = 0
 		body.Message = scanner.Text()
 		jsonBody, _ := json.Marshal(body)
