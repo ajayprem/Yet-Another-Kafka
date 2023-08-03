@@ -91,6 +91,10 @@ func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonResponse)
 }
 
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(200)
+}
+
 func main() {
 
 	var Port int
@@ -119,6 +123,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
 	r.HandleFunc("/register", RegisterConsumer).Methods("POST")
+	r.HandleFunc("/health", HealthHandler)
 
 	log.Fatal(http.ListenAndServe(":9988", r))
 }
