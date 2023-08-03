@@ -31,7 +31,7 @@ func main() {
 	flag.Parse()
 
 	// Register to broker
-	var body utils.RegisterCommand
+	var body utils.RegisterConsumer
 	body.TopicName = TopicName
 	body.Partitions = 0
 	body.Port = Port

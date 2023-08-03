@@ -39,7 +39,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		var body utils.ProduceCommand
+		var body utils.ProduceMessage
 		body.TopicName = TopicName
 		body.Partitions = 0
 		body.Message = scanner.Text()

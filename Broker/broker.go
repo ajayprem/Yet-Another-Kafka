@@ -4,7 +4,9 @@ package main
 import (
 	utils "Yet-Another-Kafka/Utils"
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,6 +21,10 @@ const (
 	BROKER_ID     = 0
 	PARTITIONS    = 0
 	LOGS_LOCATION = "/tmp"
+)
+
+var (
+	zookeeperURL = fmt.Sprintf("http://localhost:%d/register", 9998)
 )
 
 func createTopic(topicName string, partitions int) {
@@ -37,7 +43,7 @@ func createTopic(topicName string, partitions int) {
 }
 
 func ProduceHandler(w http.ResponseWriter, r *http.Request) {
-	var command utils.ProduceCommand
+	var command utils.ProduceMessage
 	json.NewDecoder(r.Body).Decode(&command)
 
 	createTopic(command.TopicName, 0)
@@ -59,7 +65,7 @@ func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
-	var command utils.RegisterCommand
+	var command utils.RegisterConsumer
 	json.NewDecoder(r.Body).Decode(&command)
 
 	createTopic(command.TopicName, 0)
@@ -86,10 +92,32 @@ func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println("Starting Broker id:", BROKER_ID)
+
+	var Port int
+	flag.IntVar(&Port, "port", 9988, "Port for broker to run")
+	flag.Parse()
+
+	log.Println("Starting Broker id:", BROKER_ID)
+
+	// Register with zookeeper
+	var body utils.RegisterBroker
+	body.Port = Port
+
+	jsonBody, _ := json.Marshal(body)
+	bodyReader := bytes.NewReader(jsonBody)
+
+	req, _ := http.NewRequest(http.MethodPost, zookeeperURL, bodyReader)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatalf("Broker: Error connecting with Zookeeper: %s\n", err)
+	}
+	if res.StatusCode != 200 {
+		log.Fatalf("Broker: Unable to register with Zookeeper:\n")
+	}
+
+	// Listen for producers or consumers
 	r := mux.NewRouter()
 	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
-	// r.HandleFunc("/consume", ConsumeHandler)
 	r.HandleFunc("/register", RegisterConsumer).Methods("POST")
 
 	log.Fatal(http.ListenAndServe(":9988", r))
