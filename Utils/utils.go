@@ -6,7 +6,8 @@ type ProduceCommand struct {
 	Message    string `json:"message"`
 }
 
-type ConsumeCommand struct {
+type RegisterCommand struct {
 	TopicName  string `json:"topic_name"`
 	Partitions int    `json:"partitions"`
+	Port       int    `json:"port"`
 }

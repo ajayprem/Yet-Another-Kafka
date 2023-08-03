@@ -58,12 +58,13 @@ func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
-func ConsumeHandler(w http.ResponseWriter, r *http.Request) {
-	var command utils.ConsumeCommand
+func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
+	var command utils.RegisterCommand
 	json.NewDecoder(r.Body).Decode(&command)
 
 	createTopic(command.TopicName, 0)
 	topicDir := filepath.Join("tmp", command.TopicName+"0")
+	fmt.Println(topicDir)
 	file, _ := os.Open(filepath.Join(topicDir, "log.txt"))
 	defer file.Close()
 
@@ -74,22 +75,22 @@ func ConsumeHandler(w http.ResponseWriter, r *http.Request) {
 	for fileScanner.Scan() {
 		messages = append(messages, fileScanner.Text())
 	}
+	fmt.Println(messages)
 
 	jsonResponse, jsonError := json.Marshal(messages)
 	if jsonError != nil {
 		fmt.Println("Unable to encode JSON")
 	}
-	fmt.Println(jsonResponse)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonResponse)
-
 }
 
 func main() {
 	fmt.Println("Starting Broker id:", BROKER_ID)
 	r := mux.NewRouter()
 	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
-	r.HandleFunc("/consume", ConsumeHandler)
+	// r.HandleFunc("/consume", ConsumeHandler)
+	r.HandleFunc("/register", RegisterConsumer).Methods("POST")
 
 	log.Fatal(http.ListenAndServe(":9988", r))
 }

@@ -32,7 +32,7 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		fmt.Print(">")
+		fmt.Print("> ")
 		scanner.Scan()
 		err := scanner.Err()
 		if err != nil {
