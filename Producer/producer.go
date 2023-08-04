@@ -12,14 +12,8 @@ import (
 	"os"
 )
 
-const (
-	SERVER_HOST = "localhost"
-	SERVER_PORT = "9988"
-	SERVER_TYPE = "tcp"
-)
-
 var (
-	URL = fmt.Sprintf("http://localhost:%d/produce", 9988)
+	zookeeperURL = fmt.Sprintf("http://localhost:%d/leader", 9998)
 )
 
 func main() {
@@ -29,6 +23,16 @@ func main() {
 	flag.IntVar(&Partition, "partition", 0, "Partition to write to")
 	flag.Parse()
 	fmt.Println(TopicName)
+
+	// Connect to zookeeper to find the leader broker
+	res, err := http.Get(zookeeperURL)
+	if err != nil {
+		log.Fatalf("Producer: Unable to connect to Zookeeper to find the leader: %s\n", err)
+	}
+
+	var port int
+	json.NewDecoder(res.Body).Decode(&port)
+	leader_url := fmt.Sprintf("http://localhost:%d/produce", port)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -46,17 +50,16 @@ func main() {
 		jsonBody, _ := json.Marshal(body)
 		bodyReader := bytes.NewReader(jsonBody)
 
-		req, err := http.NewRequest(http.MethodPost, URL, bodyReader)
+		req, err := http.NewRequest(http.MethodPost, leader_url, bodyReader)
 		if err != nil {
-			fmt.Printf("client: could not create request: %s\n", err)
+			log.Printf("Producer: could not create request: %s\n", err)
 			os.Exit(1)
 		}
 
-		res, err := http.DefaultClient.Do(req)
+		_, err = http.DefaultClient.Do(req)
 		if err != nil {
-			fmt.Printf("client: error making http request: %s\n", err)
+			log.Printf("Producer: error making http request: %s\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("client: status code: %d\n", res.StatusCode)
 	}
 }

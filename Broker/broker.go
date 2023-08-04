@@ -106,9 +106,10 @@ func main() {
 	flag.IntVar(&Port, "port", 9988, "Port for broker to run")
 	flag.Parse()
 
-	log.Println("Broker: Registering with zookeeper:")
 
 	// Register with zookeeper
+	log.Println("Broker: Registering with zookeeper:")
+	
 	var body utils.RegisterBroker
 	body.Port = Port
 

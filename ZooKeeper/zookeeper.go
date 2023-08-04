@@ -21,6 +21,18 @@ var (
 	leaderId = -1
 )
 
+// Return the location of the current leader Broker
+func leaderLocationHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("here", brokers[leaderId])
+	jsonResponse, jsonError := json.Marshal(brokers[leaderId])
+	if jsonError != nil {
+		fmt.Println("Unable to encode JSON")
+	}
+	w.WriteHeader(200)
+	w.Write(jsonResponse)
+}
+
+// Register a new broker onto the Cluster
 func registerHandler(w http.ResponseWriter, r *http.Request) {
 	var body utils.RegisterBroker
 	json.NewDecoder(r.Body).Decode(&body)
@@ -40,6 +52,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonResponse)
 }
 
+// Elect a new leader when the current leader dies
 func election() {
 	// Remove the current leader
 	delete(brokers, leaderId)
@@ -91,5 +104,6 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/register", registerHandler).Methods("POST")
+	r.HandleFunc("/leader", leaderLocationHandler)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", PORT), r))
 }
