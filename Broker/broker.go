@@ -70,7 +70,6 @@ func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 
 	createTopic(command.TopicName, 0)
 	topicDir := filepath.Join("tmp", command.TopicName+"0")
-	fmt.Println(topicDir)
 	file, _ := os.Open(filepath.Join(topicDir, "log.txt"))
 	defer file.Close()
 
@@ -81,17 +80,21 @@ func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 	for fileScanner.Scan() {
 		messages = append(messages, fileScanner.Text())
 	}
-	fmt.Println(messages)
 
 	jsonResponse, jsonError := json.Marshal(messages)
 	if jsonError != nil {
-		fmt.Println("Unable to encode JSON")
+		log.Println("Unable to encode JSON")
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonResponse)
 }
 
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
+	if id != BROKER_ID {
+		w.WriteHeader(400)
+		return
+	}
 	w.WriteHeader(200)
 }
 
@@ -106,10 +109,9 @@ func main() {
 	flag.IntVar(&Port, "port", 9988, "Port for broker to run")
 	flag.Parse()
 
-
 	// Register with zookeeper
 	log.Println("Broker: Registering with zookeeper:")
-	
+
 	var body utils.RegisterBroker
 	body.Port = Port
 
@@ -124,9 +126,11 @@ func main() {
 	if res.StatusCode != 200 {
 		log.Fatalf("Broker: Unable to register with Zookeeper:\n")
 	}
-
 	json.NewDecoder(res.Body).Decode(&BROKER_ID)
 
+	if BROKER_ID == 0 {
+		isLeader = true
+	}
 	log.Println("Starting Broker id:", BROKER_ID)
 
 	// Listen for producers or consumers

@@ -6,25 +6,29 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 )
 
 const (
-	PORT = 9998
+	PORT           = 9998
+	MAX_FAIL_RETRY = 3
 )
 
-var (
-	brokers  = make(map[int]int)
-	id       = -1
-	leaderId = -1
-)
+type state struct {
+	brokers  map[int]int
+	id       int
+	leaderId int
+	mu       sync.Mutex
+}
 
 // Return the location of the current leader Broker
 func leaderLocationHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("here", brokers[leaderId])
-	jsonResponse, jsonError := json.Marshal(brokers[leaderId])
+	s.mu.Lock()
+	jsonResponse, jsonError := json.Marshal(s.brokers[s.leaderId])
+	s.mu.Unlock()
 	if jsonError != nil {
 		fmt.Println("Unable to encode JSON")
 	}
@@ -38,68 +42,91 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&body)
 	port := body.Port
 
-	id += 1
-	brokers[id] = port
-	if id == 0 {
-		leaderId = 0
-	}
+	s.mu.Lock()
+	s.id += 1
+	s.brokers[s.id] = port
 
-	jsonResponse, jsonError := json.Marshal(id)
+	jsonResponse, jsonError := json.Marshal(s.id)
 	if jsonError != nil {
-		fmt.Println("Unable to encode JSON")
+		log.Println("Unable to encode JSON")
 	}
 	w.WriteHeader(200)
 	w.Write(jsonResponse)
+
+	if s.id == 0 {
+		log.Println("Zookeeper: New Leader elected: Broker id:", s.id)
+		s.leaderId = 0
+	}
+	s.mu.Unlock()
 }
 
 // Elect a new leader when the current leader dies
 func election() {
 	// Remove the current leader
-	delete(brokers, leaderId)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.brokers, s.leaderId)
 
 	log.Println("Zookeeper: Starting election")
 	// Elect a new leader
-	for id, location := range brokers {
-		url := fmt.Sprintf("http://localhost:%d/health", location)
+	for id, location := range s.brokers {
+		url := fmt.Sprintf("http://localhost:%d/health/?id=%d", location, id)
 
 		_, err := http.Get(url)
 		if err != nil {
 			// Un-register dead brokers
-			delete(brokers, id)
+			delete(s.brokers, id)
 		} else {
 			// Healthy broker found to replace Leader
+			_, err := http.Get(fmt.Sprintf("http://localhost:%d/leader", location))
+			if err != nil {
+				log.Fatal("Zookeeper: Something went wrong")
+			}
 			log.Println("Zookeeper: New Leader elected: Broker id:", id)
-			leaderId = id
+			s.leaderId = id
 			return
 		}
 	}
 
 	// All brokers are dead
 	log.Println("Zookeeper: All Brokers are Dead")
-	leaderId = -1
-	id = -1
+	s.leaderId = -1
+	s.id = -1
+	fmt.Println("election unlock")
 }
 
 func LeaderHealth() {
+	count := 0
 	for {
-		if leaderId != -1 {
-			url := fmt.Sprintf("http://localhost:%d/health", brokers[leaderId])
+		if s.leaderId != -1 {
+			url := fmt.Sprintf("http://localhost:%d/health?id=%d", s.brokers[s.leaderId], s.leaderId)
 
-			_, err := http.Get(url)
-			if err != nil {
-				log.Println("Zookeeper: Leader is Dead")
-				election()
+			res, err := http.Get(url)
+			if err != nil || res.StatusCode != 200 {
+				count += 1
+				if count == MAX_FAIL_RETRY {
+					log.Println("Zookeeper: Leader is Dead")
+					election()
+				} else {
+					log.Printf("Zookeeper: Leader (id: %d) is Unhealthy: retrying", s.leaderId)
+				}
 			} else {
-				log.Println("Zookeeper: Leader is Alive")
+				count = 0
+				log.Printf("Zookeeper: Leader (id: %d) is Alive", s.leaderId)
 			}
 
 		}
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 7)
 	}
 }
 
+var s state
+
 func main() {
 	log.Println("Zookeeper: Starting on port:", PORT)
+	s.brokers = make(map[int]int)
+	s.id = -1
+	s.leaderId = -1
 	go LeaderHealth()
 
 	r := mux.NewRouter()
