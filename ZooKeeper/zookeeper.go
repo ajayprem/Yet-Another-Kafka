@@ -92,7 +92,6 @@ func election() {
 	log.Println("Zookeeper: All Brokers are Dead")
 	s.leaderId = -1
 	s.id = -1
-	fmt.Println("election unlock")
 }
 
 func LeaderHealth() {

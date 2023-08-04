@@ -18,7 +18,7 @@ import (
 
 const (
 	PARTITIONS    = 0
-	LOGS_LOCATION = "/tmp"
+	LOGS_LOCATION = "tmp"
 )
 
 var (
@@ -31,6 +31,7 @@ func createTopic(topicName string, partitions int) {
 	topicDir := filepath.Join(LOGS_LOCATION, topicName+strconv.Itoa(partitions))
 
 	if _, err := os.Stat(topicDir); os.IsNotExist(err) {
+		fmt.Println("comes here 0", topicDir)
 		if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
 			log.Fatalf("Unable to create topic folder: %s", err)
 		}
@@ -48,6 +49,8 @@ func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 
 	createTopic(command.TopicName, 0)
 	topicDir := filepath.Join(LOGS_LOCATION, command.TopicName+strconv.Itoa(command.Partitions))
+
+	fmt.Println(filepath.Join(topicDir, "log.txt"))
 	file, err := os.OpenFile(filepath.Join(topicDir, "log.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("Failed opening file: %s", err)
