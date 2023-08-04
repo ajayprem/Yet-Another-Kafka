@@ -41,6 +41,30 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func election() {
+	// Remove the current leader
+	delete(brokers, leaderId)
+
+	log.Println("Zookeeper: Starting election")
+	// Elect a new leader
+	for id, location := range brokers {
+		url := fmt.Sprintf("http://localhost:%d/health", location)
+
+		_, err := http.Get(url)
+		if err != nil {
+			// Un-register dead brokers
+			delete(brokers, id)
+		} else {
+			// Healthy broker found to replace Leader
+			log.Println("Zookeeper: New Leader elected: Broker id:", id)
+			leaderId = id
+			return
+		}
+	}
+
+	// All brokers are dead
+	log.Println("Zookeeper: All Brokers are Dead")
+	leaderId = -1
+	id = -1
 }
 
 func LeaderHealth() {
@@ -52,8 +76,9 @@ func LeaderHealth() {
 			if err != nil {
 				log.Println("Zookeeper: Leader is Dead")
 				election()
+			} else {
+				log.Println("Zookeeper: Leader is Alive")
 			}
-			log.Println("Zookeeper: Leader is Alive")
 
 		}
 		time.Sleep(time.Second * 5)
