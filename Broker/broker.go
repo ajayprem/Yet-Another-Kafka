@@ -1,4 +1,3 @@
-// socket-server project main.go
 package main
 
 import (
@@ -18,13 +17,14 @@ import (
 )
 
 const (
-	BROKER_ID     = 0
 	PARTITIONS    = 0
 	LOGS_LOCATION = "/tmp"
 )
 
 var (
+	BROKER_ID    int
 	zookeeperURL = fmt.Sprintf("http://localhost:%d/register", 9998)
+	isLeader     = false
 )
 
 func createTopic(topicName string, partitions int) {
@@ -95,13 +95,18 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
+func LeaderHandler(w http.ResponseWriter, r *http.Request) {
+	isLeader = true
+	w.WriteHeader(200)
+}
+
 func main() {
 
 	var Port int
 	flag.IntVar(&Port, "port", 9988, "Port for broker to run")
 	flag.Parse()
 
-	log.Println("Starting Broker id:", BROKER_ID)
+	log.Println("Broker: Registering with zookeeper:")
 
 	// Register with zookeeper
 	var body utils.RegisterBroker
@@ -119,11 +124,16 @@ func main() {
 		log.Fatalf("Broker: Unable to register with Zookeeper:\n")
 	}
 
+	json.NewDecoder(res.Body).Decode(&BROKER_ID)
+
+	log.Println("Starting Broker id:", BROKER_ID)
+
 	// Listen for producers or consumers
 	r := mux.NewRouter()
 	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
 	r.HandleFunc("/register", RegisterConsumer).Methods("POST")
 	r.HandleFunc("/health", HealthHandler)
+	r.HandleFunc("/leader", LeaderHandler)
 
-	log.Fatal(http.ListenAndServe(":9988", r))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(Port), r))
 }
