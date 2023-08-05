@@ -27,12 +27,16 @@ type state struct {
 // Return the location of the current leader Broker
 func leaderLocationHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
-	jsonResponse, jsonError := json.Marshal(s.brokers[s.leaderId])
+	t := -1
+	if s.leaderId != -1 {
+		t = s.brokers[s.leaderId]
+	}
+	jsonResponse, jsonError := json.Marshal(t)
+
 	s.mu.Unlock()
 	if jsonError != nil {
 		fmt.Println("Unable to encode JSON")
 	}
-	w.WriteHeader(200)
 	w.Write(jsonResponse)
 }
 

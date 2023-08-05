@@ -31,7 +31,6 @@ func createTopic(topicName string, partitions int) {
 	topicDir := filepath.Join(LOGS_LOCATION, topicName+strconv.Itoa(partitions))
 
 	if _, err := os.Stat(topicDir); os.IsNotExist(err) {
-		fmt.Println("comes here 0", topicDir)
 		if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
 			log.Fatalf("Unable to create topic folder: %s", err)
 		}
