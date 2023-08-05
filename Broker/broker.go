@@ -93,6 +93,7 @@ func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
+	fmt.Println(id)
 	if id != BROKER_ID {
 		w.WriteHeader(400)
 		return

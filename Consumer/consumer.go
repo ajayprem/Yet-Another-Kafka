@@ -9,13 +9,36 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 )
 
 var (
-	URL = fmt.Sprintf("http://localhost:%d/register", 9988)
+	zookeeperURL = fmt.Sprintf("http://localhost:%d/broker", 9998)
 )
+
+func connectToBroker() int {
+	// Connect to zookeeper to find the leader broker
+	count := 0
+	for count < 5 {
+		res, err := http.Get(zookeeperURL)
+		if err != nil {
+			log.Fatalf("Consumer: Unable to connect to Zookeeper to find the leader: %s\n", err)
+		}
+
+		var body utils.BrokerResponse
+		json.NewDecoder(res.Body).Decode(&body)
+		if body.Id != -1 {
+			return body.Port
+		}
+		log.Println("Consumer: Unable to connect to leader broker: Retrying")
+		time.Sleep(time.Second * 5)
+		count += 1
+	}
+	log.Fatalf("Producer: Leader broker unavailable")
+	return 0
+}
 
 func ConsumeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -29,6 +52,10 @@ func main() {
 	flag.IntVar(&Partition, "partition", 0, "Partition to write to")
 	flag.IntVar(&Port, "port", 9999, "Port to run Consumer on")
 	flag.Parse()
+
+	// Connect to a broker from the cluster
+	brokerPort := connectToBroker()
+	URL := fmt.Sprintf("http://localhost:%d/register", brokerPort)
 
 	// Register to broker
 	var body utils.RegisterConsumer

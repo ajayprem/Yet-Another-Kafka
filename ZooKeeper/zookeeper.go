@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -31,13 +32,50 @@ func leaderLocationHandler(w http.ResponseWriter, r *http.Request) {
 	if s.leaderId != -1 {
 		t = s.brokers[s.leaderId]
 	}
-	jsonResponse, jsonError := json.Marshal(t)
-
 	s.mu.Unlock()
-	if jsonError != nil {
-		fmt.Println("Unable to encode JSON")
-	}
+
+	jsonResponse, _ := json.Marshal(t)
 	w.Write(jsonResponse)
+}
+
+// Randomly select brokers to consume messages
+func brokerHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	length := len(s.brokers)
+	brokerIds := make([]int, length)
+
+	i := 0
+	for id := range s.brokers {
+		brokerIds[i] = id
+		i += 1
+	}
+
+	rand.Shuffle(length, func(i, j int) {
+		brokerIds[i], brokerIds[j] = brokerIds[j], brokerIds[i]
+	})
+
+	for _, id := range brokerIds {
+		url := fmt.Sprintf("http://localhost:%d/health?id=%d", s.brokers[id], id)
+		res, err := http.Get(url)
+		if err == nil && res.StatusCode == 200 {
+			var body utils.BrokerResponse
+			body.Id = id
+			body.Port = s.brokers[id]
+			jsonResponse, _ := json.Marshal(body)
+			w.Write(jsonResponse)
+			return
+		} else {
+			log.Println(err, res.StatusCode)
+		}
+	}
+
+	var body utils.BrokerResponse
+	body.Id = -1
+	jsonResponse, _ := json.Marshal(-1)
+	w.Write(jsonResponse)
+
 }
 
 // Register a new broker onto the Cluster
@@ -135,5 +173,6 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/register", registerHandler).Methods("POST")
 	r.HandleFunc("/leader", leaderLocationHandler)
+	r.HandleFunc("/broker", brokerHandler)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", PORT), r))
 }

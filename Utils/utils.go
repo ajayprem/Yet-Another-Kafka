@@ -15,3 +15,8 @@ type RegisterConsumer struct {
 type RegisterBroker struct {
 	Port int `json:"port"`
 }
+
+type BrokerResponse struct {
+	Port int `json:"port"`
+	Id   int `json:"id"`
+}

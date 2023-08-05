@@ -21,7 +21,6 @@ func connectToBroker() int {
 	// Connect to zookeeper to find the leader broker
 	var port int
 	count := 0
-	fmt.Println("here")
 	for count < 5 {
 		res, err := http.Get(zookeeperURL)
 		if err != nil {
