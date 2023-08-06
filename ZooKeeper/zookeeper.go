@@ -146,10 +146,11 @@ func LeaderHealth() {
 			if err != nil || res.StatusCode != 200 {
 				count += 1
 				if count == MAX_FAIL_RETRY {
+					count = 0
 					log.Println("Zookeeper: Leader is Dead")
 					election()
 				} else {
-					log.Printf("Zookeeper: Leader (id: %d) is Unhealthy: retrying", s.leaderId)
+					log.Printf("Zookeeper: Leader (id: %d) is Unhealthy: retrying %d", s.leaderId, count)
 				}
 			} else {
 				count = 0

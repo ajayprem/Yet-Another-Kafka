@@ -49,7 +49,6 @@ func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 	createTopic(command.TopicName, 0)
 	topicDir := filepath.Join(LOGS_LOCATION, command.TopicName+strconv.Itoa(command.Partitions))
 
-	fmt.Println(filepath.Join(topicDir, "log.txt"))
 	file, err := os.OpenFile(filepath.Join(topicDir, "log.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("Failed opening file: %s", err)
@@ -67,6 +66,7 @@ func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("here")
 	var command utils.RegisterConsumer
 	json.NewDecoder(r.Body).Decode(&command)
 
@@ -93,7 +93,6 @@ func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-	fmt.Println(id)
 	if id != BROKER_ID {
 		w.WriteHeader(400)
 		return
