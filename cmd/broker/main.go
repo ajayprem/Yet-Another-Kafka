@@ -1,7 +1,7 @@
 package main
 
 import (
-	utils "Yet-Another-Kafka/Utils"
+	types "yet-another-kafka/internals/types"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -43,7 +43,7 @@ func createTopic(topicName string, partitions int) {
 }
 
 func ProduceHandler(w http.ResponseWriter, r *http.Request) {
-	var command utils.ProduceMessage
+	var command types.ProduceMessage
 	json.NewDecoder(r.Body).Decode(&command)
 
 	createTopic(command.TopicName, 0)
@@ -67,7 +67,7 @@ func ProduceHandler(w http.ResponseWriter, r *http.Request) {
 
 func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("here")
-	var command utils.RegisterConsumer
+	var command types.RegisterConsumer
 	json.NewDecoder(r.Body).Decode(&command)
 
 	createTopic(command.TopicName, 0)
@@ -114,7 +114,7 @@ func main() {
 	// Register with zookeeper
 	log.Println("Broker: Registering with zookeeper:")
 
-	var body utils.RegisterBroker
+	var body types.RegisterBroker
 	body.Port = Port
 
 	jsonBody, _ := json.Marshal(body)

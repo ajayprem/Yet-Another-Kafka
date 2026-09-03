@@ -1,7 +1,7 @@
 package main
 
 import (
-	utils "Yet-Another-Kafka/Utils"
+	types "yet-another-kafka/internals/types"
 	"bytes"
 	"encoding/json"
 	"flag"
@@ -29,7 +29,7 @@ var (
 
 func registerToBroker() {
 	// Inform the broker about the consumer's location so that the broker can send messages from the topic
-	var body utils.RegisterConsumer
+	var body types.RegisterConsumer
 	body.TopicName = topicName
 	body.Partitions = 0
 	body.Port = Port
@@ -60,7 +60,7 @@ func connectToBroker() {
 			log.Fatalf("Consumer: Unable to connect to Zookeeper to find the leader: %s\n", err)
 		}
 
-		var body utils.BrokerResponse
+		var body types.BrokerResponse
 		json.NewDecoder(res.Body).Decode(&body)
 		if body.Id != -1 {
 			brokerId = body.Id

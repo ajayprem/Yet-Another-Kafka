@@ -1,4 +1,4 @@
-package utils
+package types
 
 type ProduceMessage struct {
 	TopicName  string `json:"topic_name"`

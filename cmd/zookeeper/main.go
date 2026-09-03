@@ -1,7 +1,7 @@
 package main
 
 import (
-	utils "Yet-Another-Kafka/Utils"
+	types "yet-another-kafka/internals/types"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -26,13 +26,15 @@ type state struct {
 }
 
 // Return the location of the current leader Broker
+// Todo add proper error handling for when there is no leader
 func leaderLocationHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	t := -1
 	if s.leaderId != -1 {
 		t = s.brokers[s.leaderId]
 	}
-	s.mu.Unlock()
 
 	jsonResponse, _ := json.Marshal(t)
 	w.Write(jsonResponse)
@@ -60,7 +62,7 @@ func brokerHandler(w http.ResponseWriter, r *http.Request) {
 		url := fmt.Sprintf("http://localhost:%d/health?id=%d", s.brokers[id], id)
 		res, err := http.Get(url)
 		if err == nil && res.StatusCode == 200 {
-			var body utils.BrokerResponse
+			var body types.BrokerResponse
 			body.Id = id
 			body.Port = s.brokers[id]
 			jsonResponse, _ := json.Marshal(body)
@@ -71,20 +73,20 @@ func brokerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var body utils.BrokerResponse
+	var body types.BrokerResponse
 	body.Id = -1
 	jsonResponse, _ := json.Marshal(-1)
 	w.Write(jsonResponse)
-
 }
 
 // Register a new broker onto the Cluster
 func registerHandler(w http.ResponseWriter, r *http.Request) {
-	var body utils.RegisterBroker
+	var body types.RegisterBroker
 	json.NewDecoder(r.Body).Decode(&body)
 	port := body.Port
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.id += 1
 	s.brokers[s.id] = port
 
@@ -99,7 +101,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("Zookeeper: New Leader elected: Broker id:", s.id)
 		s.leaderId = 0
 	}
-	s.mu.Unlock()
 }
 
 // Elect a new leader when the current leader dies

@@ -1,7 +1,7 @@
 package main
 
 import (
-	utils "Yet-Another-Kafka/Utils"
+	types "yet-another-kafka/internals/types"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -59,7 +59,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		var body utils.ProduceMessage
+		var body types.ProduceMessage
 		body.TopicName = TopicName
 		body.Partitions = 0
 		body.Message = scanner.Text()
