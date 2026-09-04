@@ -12,11 +12,20 @@ type RegisterConsumer struct {
 	Port       int    `json:"port"`
 }
 
-type RegisterBroker struct {
-	Port int `json:"port"`
+type Broker struct {
+	Address string `json:"address"`
+	Id      int    `json:"id"`
 }
 
 type BrokerResponse struct {
 	Port int `json:"port"`
 	Id   int `json:"id"`
+}
+
+type RegisterBrokerResponse struct {
+	IsLeader bool `json:"is_leader"`
+}
+
+type BrokerAddressResponse struct {
+	Address string `json:"address"`
 }
