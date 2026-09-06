@@ -1,146 +1,52 @@
 package main
 
 import (
-	types "yet-another-kafka/internals/types"
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
+	broker "yet-another-kafka/internals/broker"
 
 	"github.com/gorilla/mux"
 )
 
-const (
-	PARTITIONS    = 0
-	LOGS_LOCATION = "tmp"
-)
-
-var (
-	BROKER_ID    int
-	zookeeperURL = fmt.Sprintf("http://localhost:%d/register", 9998)
-	isLeader     = false
-)
-
-func createTopic(topicName string, partitions int) {
-	topicDir := filepath.Join(LOGS_LOCATION, topicName+strconv.Itoa(partitions))
-
-	if _, err := os.Stat(topicDir); os.IsNotExist(err) {
-		if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
-			log.Fatalf("Unable to create topic folder: %s", err)
-		}
-		file, err := os.Create(filepath.Join(topicDir, "log.txt"))
-		if err != nil {
-			log.Fatalf("Failed creating file: %s", err)
-		}
-		file.Close()
-	}
-}
-
-func ProduceHandler(w http.ResponseWriter, r *http.Request) {
-	var command types.ProduceMessage
-	json.NewDecoder(r.Body).Decode(&command)
-
-	createTopic(command.TopicName, 0)
-	topicDir := filepath.Join(LOGS_LOCATION, command.TopicName+strconv.Itoa(command.Partitions))
-
-	file, err := os.OpenFile(filepath.Join(topicDir, "log.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed opening file: %s", err)
-	}
-	defer file.Close()
-
-	datawriter := bufio.NewWriter(file)
-	_, err = datawriter.WriteString(command.Message + "\n")
-	if err != nil {
-		log.Fatalf("Unable to write to file: %s", err)
-	}
-	datawriter.Flush()
-
-	w.Header().Set("Content-Type", "application/json")
-}
-
-func RegisterConsumer(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("here")
-	var command types.RegisterConsumer
-	json.NewDecoder(r.Body).Decode(&command)
-
-	createTopic(command.TopicName, 0)
-	topicDir := filepath.Join("tmp", command.TopicName+"0")
-	file, _ := os.Open(filepath.Join(topicDir, "log.txt"))
-	defer file.Close()
-
-	fileScanner := bufio.NewScanner(file)
-	fileScanner.Split(bufio.ScanLines)
-	var messages []string
-
-	for fileScanner.Scan() {
-		messages = append(messages, fileScanner.Text())
-	}
-
-	jsonResponse, jsonError := json.Marshal(messages)
-	if jsonError != nil {
-		log.Println("Unable to encode JSON")
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonResponse)
-}
-
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-	if id != BROKER_ID {
-		w.WriteHeader(400)
-		return
-	}
-	w.WriteHeader(200)
-}
-
-func LeaderHandler(w http.ResponseWriter, r *http.Request) {
-	isLeader = true
-	w.WriteHeader(200)
-}
-
 func main() {
-
-	var Port int
-	flag.IntVar(&Port, "port", 9988, "Port for broker to run")
+	var port, brokerId int
+	var zookeeper string
+	flag.IntVar(&brokerId, "id", -1, "stable ID for this broker (required)")
+	flag.IntVar(&port, "port", 9988, "Port for broker to run")
+	flag.StringVar(&zookeeper, "zookeeper", "", "address of zookeeper service (required)")
 	flag.Parse()
 
-	// Register with zookeeper
-	log.Println("Broker: Registering with zookeeper:")
+	switch {
+	case brokerId < 0:
+		log.Fatal("error: -id is required")
+	case zookeeper == "":
+		log.Fatal("error: -zookeeper is required")
+	}
 
-	var body types.RegisterBroker
-	body.Port = Port
-
-	jsonBody, _ := json.Marshal(body)
-	bodyReader := bytes.NewReader(jsonBody)
-
-	req, _ := http.NewRequest(http.MethodPost, zookeeperURL, bodyReader)
-	res, err := http.DefaultClient.Do(req)
+	address, err := broker.GetLocalAddress(port)
 	if err != nil {
-		log.Fatalf("Broker: Error connecting with Zookeeper: %s\n", err)
+		log.Fatal(err)
 	}
-	if res.StatusCode != 200 {
-		log.Fatalf("Broker: Unable to register with Zookeeper:\n")
-	}
-	json.NewDecoder(res.Body).Decode(&BROKER_ID)
 
-	if BROKER_ID == 0 {
-		isLeader = true
+	service, err := broker.NewService(brokerId, address, zookeeper)
+	if err != nil {
+		log.Fatal(err)
 	}
-	log.Println("Starting Broker id:", BROKER_ID)
 
-	// Listen for producers or consumers
+	if err := service.RegisterWithZookeeper(); err != nil {
+		log.Fatal(err)
+	}
+
+	h := broker.NewHandlers(service)
+
 	r := mux.NewRouter()
-	r.HandleFunc("/produce", ProduceHandler).Methods("POST")
-	r.HandleFunc("/register", RegisterConsumer).Methods("POST")
-	r.HandleFunc("/health", HealthHandler)
-	r.HandleFunc("/leader", LeaderHandler)
+	// TODO: convert this to POST /topics/<topic>/messages for produce and /consumers for consumers
+	r.HandleFunc("/produce", h.ProduceHandler).Methods("POST")
+	r.HandleFunc("/consume", h.ConsumeHandler).Methods("POST")
+	r.HandleFunc("/health", h.HealthHandler)
+	r.HandleFunc("/leader", h.SetLeaderHandler)
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(Port), r))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), r))
 }

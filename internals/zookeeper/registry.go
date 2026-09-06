@@ -67,7 +67,7 @@ func (r *Registry) GetRandomBroker() (*Broker, bool) {
 	if len(r.brokers) == 0 {
 		return nil, false
 	}
-	
+
 	// // leverage go's random map iteration to find broker
 	for id, broker := range r.brokers {
 		if isAlive(broker) {
@@ -116,7 +116,7 @@ func (r *Registry) election() {
 
 	// elect new leader
 	for _, broker := range r.brokers {
-		if retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, broker.IsAlive) {
+		if retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, broker.SetLeader) {
 			r.leaderId = broker.Id
 			log.Println("zookeeper: new leader elected: broker id:", broker.Id)
 		} else {
@@ -126,5 +126,5 @@ func (r *Registry) election() {
 }
 
 func isAlive(b *Broker) bool {
-    return !retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, b.IsAlive)
+	return !retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, b.IsAlive)
 }

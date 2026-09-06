@@ -1,10 +1,10 @@
 package zookeeper
 
 import (
-	types "yet-another-kafka/internals/types"
 	"encoding/json"
 	"errors"
 	"net/http"
+	types "yet-another-kafka/internals/types"
 )
 
 type Handlers struct {
@@ -18,16 +18,16 @@ func NewHandlers(reg *Registry) *Handlers {
 }
 
 func (h *Handlers) RegisterBroker(w http.ResponseWriter, r *http.Request) {
-	var body Broker
+	var body types.RegisterBrokerRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	isLeader, err := h.reg.RegisterBroker(&body)
+	isLeader, err := h.reg.RegisterBroker(&Broker{body.Id, body.Address})
 	if err != nil {
 		if errors.Is(err, ErrBrokerIDConflict) {
-			http.Error(w, err.Error(), http.StatusConflict) // 409
+			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -36,7 +36,7 @@ func (h *Handlers) RegisterBroker(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(types.RegisterBrokerResponse{IsLeader: isLeader})
+	json.NewEncoder(w).Encode(types.RegisterBrokerResponse{IsLeader: isLeader})
 }
 
 func (h *Handlers) GetLeader(w http.ResponseWriter, r *http.Request) {
