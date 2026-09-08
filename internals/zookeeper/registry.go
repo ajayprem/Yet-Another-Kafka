@@ -38,11 +38,13 @@ func (r *Registry) RegisterBroker(broker *Broker) (bool, error) {
 	defer r.mu.Unlock()
 
 	if _, ok := r.brokers[broker.Id]; ok {
+		log.Printf("RegisterBroker: broker (%d) on address(%s) already exists", broker.Id, broker.Address)
 		return false, ErrBrokerIDConflict
 	}
 
 	isFirstBroker := len(r.brokers) == 0
 	r.brokers[broker.Id] = broker
+	log.Printf("RegisterBroker: registered broker (%d) on address(%s)", broker.Id, broker.Address)
 
 	if isFirstBroker {
 		log.Println("zookeeper: new leader elected: broker id:", broker.Id)
@@ -87,6 +89,7 @@ func (r *Registry) LeaderHealthCheck(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if r.needsElection() {
+				log.Printf("LeaderHealthCheck: leader dead, election needed")
 				r.election()
 			}
 		case <-ctx.Done():

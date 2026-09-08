@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	types "yet-another-kafka/internals/types"
 )
 
 const (
-	DEFAULT_PARTITIONS = 0
+	DEFAULT_PARTITIONS             = 0
+	ZOOKEEPER_BROKER_REGISTER_PATH = "/brokers"
 )
 
 type Service struct {
@@ -47,10 +49,14 @@ func NewService(id int, address string, zookeeperURL string) (*Service, error) {
 // Register the broker with zookeeper, if calls to zookeeper fail
 func (s *Service) RegisterWithZookeeper() error {
 	body := types.RegisterBrokerRequest{Id: s.id, Address: s.address}
+	url := fmt.Sprintf("http://%s%s", s.zookeeperURL, ZOOKEEPER_BROKER_REGISTER_PATH)
 
 	jsonBody, _ := json.Marshal(body)
 	bodyReader := bytes.NewReader(jsonBody)
-	req, _ := http.NewRequest(http.MethodPost, s.zookeeperURL, bodyReader)
+	req, err := http.NewRequest(http.MethodPost, url, bodyReader)
+	if err != nil {
+		return fmt.Errorf("broker: error creating request: %s", err)
+	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -64,6 +70,7 @@ func (s *Service) RegisterWithZookeeper() error {
 	json.NewDecoder(res.Body).Decode(&resBody)
 
 	s.isLeader = resBody.IsLeader
+	log.Printf("RegisterWithZookeeper: successfully registered broker, isLeader=%t", s.isLeader)
 	return nil
 }
 
