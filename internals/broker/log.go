@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"container/heap"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"yet-another-kafka/internals/types"
 )
+
+// TODO: lock all file operations in this file
 
 const (
 	LOCATION_PREFIX = "tmp"
@@ -82,7 +85,6 @@ func (l *logStore) getTopicDir(topicName string) string {
 type topicFoundFunc func(topicName string, partitions, lastOffset int)
 
 func (l *logStore) scanExistingTopics(onFound topicFoundFunc) error {
-
 	entries, err := os.ReadDir(l.location)
 	if err != nil {
 		return fmt.Errorf("log.scanExistingTopics: error while reading locatoin: %s", err)
@@ -111,6 +113,105 @@ func (l *logStore) scanExistingTopics(onFound topicFoundFunc) error {
 	}
 
 	return nil
+}
+
+type messageFoundFunc func(msg types.Message) error
+
+// heapEntry tracks one open partition file's current front-of-queue record
+type heapEntry struct {
+	offset int
+	key    string
+	value  string
+	reader *csv.Reader
+	file   *os.File
+}
+
+// heapEntries implements container/heap.Interface, ordered by offset ascending
+type heapEntries []*heapEntry
+
+func (h heapEntries) Len() int           { return len(h) }
+func (h heapEntries) Less(i, j int) bool { return h[i].offset < h[j].offset }
+func (h heapEntries) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *heapEntries) Push(x any)        { *h = append(*h, x.(*heapEntry)) }
+func (h *heapEntries) Pop() any {
+	old := *h
+	n := len(old)
+	item := old[n-1]
+	*h = old[:n-1]
+	return item
+}
+
+func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) error {
+	topicDir := l.getTopicDir(topicName)
+	files, err := os.ReadDir(topicDir)
+	if err != nil {
+		return fmt.Errorf("log.scanTopicFiles: unable to read topic dir: %s", err)
+	}
+
+	h := &heapEntries{}
+	heap.Init(h)
+
+	// open every partition file, seed the heap with each file's first record
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		file, err := os.Open(filepath.Join(topicDir, f.Name()))
+		if err != nil {
+			return fmt.Errorf("log.scanTopicFiles: unable to open %s: %s", f.Name(), err)
+		}
+
+		entry, ok, err := nextEntry(csv.NewReader(file), file)
+		if err != nil {
+			file.Close()
+			return err
+		}
+		if ok {
+			heap.Push(h, entry)
+		} else {
+			file.Close()
+		}
+	}
+
+	// repeatedly pop the globally smallest offset, refill from the same file
+	for h.Len() > 0 {
+		entry := heap.Pop(h).(*heapEntry)
+		err := onMessage(types.Message{Offset: entry.offset, Key: entry.key, Value: entry.value})
+		if err != nil {
+			return fmt.Errorf("log.scanTopicFiles: error: %s", err)
+		}
+
+		next, ok, err := nextEntry(entry.reader, entry.file)
+		if err != nil {
+			entry.file.Close()
+			return err
+		}
+		if ok {
+			heap.Push(h, next)
+		} else {
+			entry.file.Close()
+		}
+	}
+
+	return nil
+}
+
+// nextEntry reads and parses the next CSV record. ok=false, err=nil means EOF.
+func nextEntry(reader *csv.Reader, file *os.File) (*heapEntry, bool, error) {
+	record, err := reader.Read()
+	if err == io.EOF {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("log.scanTopicFiles: error reading record: %s", err)
+	}
+
+	offset, err := strconv.Atoi(record[0])
+	if err != nil {
+		return nil, false, fmt.Errorf("log.scanTopicFiles: invalid offset %q: %s", record[0], err)
+	}
+
+	return &heapEntry{offset: offset, key: record[1], value: record[2], reader: reader, file: file}, true, nil
 }
 
 func lastOffsetInFile(path string) (int, error) {

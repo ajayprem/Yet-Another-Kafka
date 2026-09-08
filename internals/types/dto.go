@@ -25,8 +25,14 @@ type ProduceMessageRequest struct {
 	Value      string `json:"value"`
 }
 
-type RegisterConsumer struct {
-	TopicName  string `json:"topic_name"`
-	Partitions int    `json:"partitions"`
-	Port       int    `json:"port"`
+type RegisterConsumerRequest struct {
+	TopicName     string `json:"topic_name"`
+	Address       string `json:"address"`
+	FromBeginning bool   `json:"from_beginning"`
+}
+
+type ConsumerMessageData struct {
+	Offset int    `json:"offset"`
+	Key    string `json:"key"`
+	Value  string `json:"value"`
 }

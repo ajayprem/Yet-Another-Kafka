@@ -48,5 +48,15 @@ func (h *Handlers) ProduceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ConsumeHandler(w http.ResponseWriter, r *http.Request) {
+	var registerConsumer types.RegisterConsumerRequest
+	if err := json.NewDecoder(r.Body).Decode(&registerConsumer); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
+	if err := h.service.registerConsumer(registerConsumer.TopicName, registerConsumer.Address, registerConsumer.FromBeginning); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(200)
 }

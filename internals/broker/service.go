@@ -19,6 +19,7 @@ type Service struct {
 	zookeeperURL  string
 	metadataStore *metadataStore
 	logStore      *logStore
+	consumerStore *consumerStore
 }
 
 // TODO: we might not need a lot of these fields
@@ -39,6 +40,7 @@ func NewService(id int, address string, zookeeperURL string) (*Service, error) {
 		zookeeperURL:  zookeeperURL,
 		metadataStore: metadataStore,
 		logStore:      logStore,
+		consumerStore: newConsumerStore(),
 	}, nil
 }
 
@@ -95,4 +97,16 @@ func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	}
 
 	return s.logStore.appendRecord(topicName, partition, offset, msg)
+}
+
+func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool) error {
+	c := &consumer{consumerURL}
+	s.consumerStore.addConsumer(c, topicName)
+	if fromBegin {
+		err := s.logStore.scanTopicFiles(topicName, c.sendMessage)
+		if err != nil {
+			return fmt.Errorf("service.addConsumer: %s", err)
+		}
+	}
+	return nil
 }

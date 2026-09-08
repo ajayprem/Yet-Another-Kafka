@@ -1,6 +1,7 @@
 package types
 
 type Message struct {
-	Key   string
-	Value string
+	Offset int
+	Key    string
+	Value  string
 }
