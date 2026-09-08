@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	broker "yet-another-kafka/internals/broker"
+	types "yet-another-kafka/internals/types"
 
 	"github.com/gorilla/mux"
 )
@@ -25,7 +26,7 @@ func main() {
 		log.Fatal("error: -zookeeper is required")
 	}
 
-	address, err := broker.GetLocalAddress(port)
+	address, err := types.GetLocalAddress(port)
 	if err != nil {
 		log.Fatal(err)
 	}

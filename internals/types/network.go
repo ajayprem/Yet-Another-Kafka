@@ -1,4 +1,4 @@
-package broker
+package types
 
 import (
 	"net"

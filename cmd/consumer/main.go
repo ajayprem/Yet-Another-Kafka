@@ -1,117 +1,61 @@
 package main
 
 import (
-	types "yet-another-kafka/internals/types"
-	"bytes"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
+	"yet-another-kafka/internals/consumer"
+	"yet-another-kafka/internals/types"
 
 	"github.com/gorilla/mux"
 )
 
-const (
-	MAX_FAIL_RETRY = 5
-)
-
-var (
-	zookeeperURL = fmt.Sprintf("http://localhost:%d/broker", 9998)
-	brokerId     = -1
-	brokerPort   = -1
-	URL          string
-	Port         int
-	topicName    string
-)
-
-func registerToBroker() {
-	// Inform the broker about the consumer's location so that the broker can send messages from the topic
-	var body types.RegisterConsumer
-	body.TopicName = topicName
-	body.Partitions = 0
-	body.Port = Port
-
-	jsonBody, _ := json.Marshal(body)
-	bodyReader := bytes.NewReader(jsonBody)
-
-	req, _ := http.NewRequest(http.MethodPost, URL, bodyReader)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Fatalf("Consumer: Error connecting with Broker: %s\n", err)
-	}
-
-	var messages []string
-	json.NewDecoder(res.Body).Decode(&messages)
-
-	for _, message := range messages {
-		fmt.Println(">", message)
-	}
-}
-
-func connectToBroker() {
-	// Connect to zookeeper to find the leader broker
-	count := 0
-	for count < 5 {
-		res, err := http.Get(zookeeperURL)
-		if err != nil {
-			log.Fatalf("Consumer: Unable to connect to Zookeeper to find the leader: %s\n", err)
-		}
-
-		var body types.BrokerResponse
-		json.NewDecoder(res.Body).Decode(&body)
-		if body.Id != -1 {
-			brokerId = body.Id
-			brokerPort = body.Port
-			URL = fmt.Sprintf("http://localhost:%d/register", brokerPort)
-			log.Println("Consumer: Connected to broker: ", brokerId)
-			registerToBroker()
-			return
-		}
-		log.Println("Consumer: Unable to connect to leader broker: Retrying")
-		time.Sleep(time.Second * 5)
-		count += 1
-	}
-	log.Fatalf("Consumer: No Brokers Available")
-}
-
-func ConsumeHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-}
-
-func checkBroker() {
-	for {
-		if brokerId != -1 {
-			url := fmt.Sprintf("http://localhost:%d/health?id=%d", brokerPort, brokerId)
-
-			res, err := http.Get(url)
-			if err != nil || res.StatusCode != 200 {
-				log.Println("Consumer: Unable to connect to Broker: Fetching new broker id from zookeeper")
-				connectToBroker()
-			}
-		}
-		time.Sleep(time.Second * 10)
-	}
-}
-
 func main() {
 
-	flag.StringVar(&topicName, "topic", "default", "Name of the topic to be created")
-	// flag.IntVar(&Partition, "partition", 0, "Partition to write to")
-	flag.IntVar(&Port, "port", 9997, "Port to run Consumer on")
-	// flag.BoolVar(&Port, "port", 9997, "Port to run Consumer on")
-
+	var topicName, zookeeper string
+	var partitions, port int
+	var createTopic, fromBeginning bool
+	flag.StringVar(&zookeeper, "zookeeper", "", "address of zookeeper service (required)")
+	flag.StringVar(&topicName, "topic", "", "name of the topic to be created (required)")
+	flag.IntVar(&partitions, "partitions", 1, "partitions to create the topic with (used if create-topic is true)")
+	flag.BoolVar(&createTopic, "create-topic", false, "create a new topic with given name and partitions")
+	flag.BoolVar(&createTopic, "create-topic", false, "set to true if all messages from the start of topic creation needs to be read")
+	flag.IntVar(&port, "port", 9988, "Port for broker to run")
 	flag.Parse()
 
-	// Connect to a broker from the cluster
-	connectToBroker()
-	go checkBroker()
+	switch {
+	case topicName == "":
+		log.Fatal("error: -topic is required")
+	case zookeeper == "":
+		log.Fatal("error: -zookeeper is required")
+	}
+
+	address, err := types.GetLocalAddress(port)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	service, err := consumer.NewService(address, zookeeper, topicName, fromBeginning)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if createTopic {
+		if err := service.CreateTopic(partitions); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	if err := service.RegisterConsumer(); err != nil {
+		log.Fatal(err)
+	}
+
+	handlers := consumer.NewHandlers(service)
 
 	//create server to wait for messages from broker
 	r := mux.NewRouter()
-	r.HandleFunc("/consume", ConsumeHandler)
+	r.HandleFunc("/consume", handlers.MessageConsumeHandler)
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(Port), r))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), r))
 }

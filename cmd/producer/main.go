@@ -2,42 +2,13 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 	"yet-another-kafka/internals/producer"
 )
-
-var (
-	zookeeperURL = fmt.Sprintf("http://localhost:%d/leader", 9998)
-)
-
-func connectToBroker() int {
-	// Connect to zookeeper to find the leader broker
-	var port int
-	count := 0
-	for count < 5 {
-		res, err := http.Get(zookeeperURL)
-		if err != nil {
-			log.Fatalf("Producer: Unable to connect to Zookeeper to find the leader: %s\n", err)
-		}
-
-		json.NewDecoder(res.Body).Decode(&port)
-		if port != -1 {
-			return port
-		}
-		log.Println("Producer: Unable to connect to leader broker: Retrying")
-		time.Sleep(time.Second * 5)
-		count += 1
-	}
-	log.Fatalf("Producer: Leader broker unavailable")
-	return 0
-}
 
 func main() {
 	var topicName, zookeeper string
@@ -62,8 +33,11 @@ func main() {
 	}
 
 	if createTopic {
-		service.CreateTopic(partitions)
+		if err := service.CreateTopic(partitions); err != nil {
+			log.Fatal(err)
+		}
 	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("> ")
@@ -82,6 +56,11 @@ func main() {
 			value = strings.TrimSpace(parts[0])
 		}
 
-		service.Produce(key, value)
+		if err := service.Produce(key, value); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("reading input: %v", err)
 	}
 }

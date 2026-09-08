@@ -28,8 +28,8 @@ func main() {
 	handlers := zookeeper.NewHandlers(registry)
 
 	r := mux.NewRouter()
-	r.HandleFunc("/broker", handlers.RegisterBroker).Methods("POST")
-	r.HandleFunc("/broker", handlers.GetRandomBroker).Methods("GET")
+	r.HandleFunc("/brokers", handlers.RegisterBroker).Methods("POST")
+	r.HandleFunc("/brokers", handlers.GetRandomBroker).Methods("GET")
 	r.HandleFunc("/leader", handlers.GetLeader).Methods("GET")
 
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", PORT), Handler: r}
