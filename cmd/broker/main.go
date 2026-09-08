@@ -42,11 +42,12 @@ func main() {
 	h := broker.NewHandlers(service)
 
 	r := mux.NewRouter()
+	r.HandleFunc("/topics", h.CreateTopicHandler).Methods("POST")
 	// TODO: convert this to POST /topics/<topic>/messages for produce and /consumers for consumers
 	r.HandleFunc("/produce", h.ProduceHandler).Methods("POST")
 	r.HandleFunc("/consume", h.ConsumeHandler).Methods("POST")
-	r.HandleFunc("/health", h.HealthHandler)
-	r.HandleFunc("/leader", h.SetLeaderHandler)
+	r.HandleFunc("/health", h.HealthHandler).Methods("GET")
+	r.HandleFunc("/leader", h.SetLeaderHandler).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), r))
 }

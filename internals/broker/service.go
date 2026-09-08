@@ -86,9 +86,7 @@ func (s *Service) createTopic(topicName string, partitions int) error {
 
 func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	if !s.metadataStore.doesTopicExist(topicName) {
-		if err := s.createTopic(topicName, DEFAULT_PARTITIONS); err != nil {
-			return err
-		}
+		return fmt.Errorf("service.produceMessage: topic(%s) does not exist", topicName)
 	}
 
 	partition, offset, err := s.metadataStore.nextOffset(topicName, msg.Key)

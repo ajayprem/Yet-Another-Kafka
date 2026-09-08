@@ -1,16 +1,16 @@
 package main
 
 import (
-	types "yet-another-kafka/internals/types"
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+	"yet-another-kafka/internals/producer"
 )
 
 var (
@@ -40,44 +40,48 @@ func connectToBroker() int {
 }
 
 func main() {
-	var TopicName string
-	var Partition int
-	flag.StringVar(&TopicName, "topic", "default", "Name of the topic to be created")
-	flag.IntVar(&Partition, "partition", 0, "Partition to write to")
+	var topicName, zookeeper string
+	var partitions int
+	var createTopic bool
+	flag.StringVar(&zookeeper, "zookeeper", "", "address of zookeeper service (required)")
+	flag.StringVar(&topicName, "topic", "", "name of the topic to be created (required)")
+	flag.IntVar(&partitions, "partitions", 1, "partitions to create the topic with (used if create-topic is true)")
+	flag.BoolVar(&createTopic, "create-topic", false, "create a new topic with given name and partitions")
 	flag.Parse()
-	fmt.Println(TopicName)
 
-	port := connectToBroker()
-	leader_url := fmt.Sprintf("http://localhost:%d/produce", port)
+	switch {
+	case topicName == "":
+		log.Fatal("error: -topic is required")
+	case zookeeper == "":
+		log.Fatal("error: -zookeeper is required")
+	}
 
+	service, err := producer.NewService(zookeeper, topicName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if createTopic {
+		service.CreateTopic(partitions)
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("> ")
-		scanner.Scan()
-		err := scanner.Err()
-		if err != nil {
-			log.Fatal(err)
+		if !scanner.Scan() {
+			break
 		}
 
-		var body types.ProduceMessage
-		body.TopicName = TopicName
-		body.Partitions = 0
-		body.Message = scanner.Text()
-		jsonBody, _ := json.Marshal(body)
-		bodyReader := bytes.NewReader(jsonBody)
-
-		req, err := http.NewRequest(http.MethodPost, leader_url, bodyReader)
-		if err != nil {
-			log.Printf("Producer: could not create request: %s\n", err)
-			port = connectToBroker()
-			leader_url = fmt.Sprintf("http://localhost:%d/produce", port)
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 2)
+		var key, value string
+		if len(parts) == 2 {
+			key = strings.TrimSpace(parts[0])
+			value = strings.TrimSpace(parts[1])
+		} else {
+			// no delimiter found — treat the whole line as the value, empty key
+			value = strings.TrimSpace(parts[0])
 		}
 
-		_, err = http.DefaultClient.Do(req)
-		if err != nil {
-			log.Printf("Producer: Error connecting with broker, please try again: %s\n", err)
-			port = connectToBroker()
-			leader_url = fmt.Sprintf("http://localhost:%d/produce", port)
-		}
+		service.Produce(key, value)
 	}
 }

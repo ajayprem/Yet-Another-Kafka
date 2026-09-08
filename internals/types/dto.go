@@ -20,7 +20,6 @@ type CreateTopicRequest struct {
 
 type ProduceMessageRequest struct {
 	TopicName  string `json:"topic_name"`
-	Partitions int    `json:"partitions"`
 	Key        string `json:"key"`
 	Value      string `json:"value"`
 }
