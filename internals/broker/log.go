@@ -27,19 +27,18 @@ type logStore struct {
 }
 
 func newLogStore(brokerId int) (*logStore, error) {
-	// return error if base location does not exist
 	_, err := os.Stat(LOCATION_PREFIX)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("logstore.newLogStore: base location does not exist")
+			return nil, fmt.Errorf("base location does not exist")
 		}
-		return nil, fmt.Errorf("logstore.newLogStore: unable to inspect base location: %w", err)
+		return nil, fmt.Errorf("unable to inspect base location: %w", err)
 	}
 
 	location := filepath.Join(LOCATION_PREFIX, fmt.Sprintf(BROKER_PREFIX, brokerId))
 	if _, err := os.Stat(location); os.IsNotExist(err) {
 		if err := os.Mkdir(location, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("logstore.newLogStore: unable to create broker store: %s", err)
+			return nil, fmt.Errorf("unable to create broker store: %s", err)
 		}
 	}
 
@@ -50,16 +49,16 @@ func newLogStore(brokerId int) (*logStore, error) {
 
 // TODO: make thread safe -> two threads running create at same time for same topic
 func (l *logStore) createTopicFiles(topicName string, partitions int) error {
-	topicDir := filepath.Join(l.location, topicName)
+	topicDir := l.getTopicDir(topicName)
 	if err := os.Mkdir(topicDir, os.ModePerm); err != nil {
-		return fmt.Errorf("newLogStore.createTopicFiles unable to create topic dir: %s", err)
+		return fmt.Errorf("unable to create topic dir: %s", err)
 	}
 
 	for partition := range partitions {
 		fileName := fmt.Sprintf(LOG_FILE_FORMAT, topicName, partition)
-		file, err := os.Create(fileName)
+		file, err := os.Create(filepath.Join(topicDir, fileName))
 		if err != nil {
-			return fmt.Errorf("newLogStore.createTopicFiles: error creating log file: %s", err)
+			return fmt.Errorf("error creating log file: %s", err)
 		}
 		file.Close()
 	}
@@ -72,13 +71,13 @@ func (l *logStore) appendRecord(topicName string, partition, offset int, msg typ
 	fileName := fmt.Sprintf(LOG_FILE_FORMAT, topicName, partition)
 	file, err := os.OpenFile(filepath.Join(l.getTopicDir(topicName), fileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("log: failed opening file: %s", err)
+		return fmt.Errorf("failed opening file: %s", err)
 	}
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
 	if err := writer.Write([]string{strconv.Itoa(offset), msg.Key, msg.Value}); err != nil {
-		return fmt.Errorf("log: unable to write record: %v", err)
+		return fmt.Errorf("unable to write record: %v", err)
 	}
 	writer.Flush()
 	return writer.Error()
@@ -93,7 +92,7 @@ type topicFoundFunc func(topicName string, partitions, lastOffset int)
 func (l *logStore) scanExistingTopics(onFound topicFoundFunc) error {
 	entries, err := os.ReadDir(l.location)
 	if err != nil {
-		return fmt.Errorf("log.scanExistingTopics: error while reading locatoin: %s", err)
+		return fmt.Errorf("error while reading locatoin: %s", err)
 	}
 
 	for _, entry := range entries {
@@ -151,7 +150,7 @@ func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) 
 	topicDir := l.getTopicDir(topicName)
 	files, err := os.ReadDir(topicDir)
 	if err != nil {
-		return fmt.Errorf("log.scanTopicFiles: unable to read topic dir: %s", err)
+		return fmt.Errorf("unable to read topic dir: %s", err)
 	}
 
 	h := &heapEntries{}
@@ -164,7 +163,7 @@ func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) 
 		}
 		file, err := os.Open(filepath.Join(topicDir, f.Name()))
 		if err != nil {
-			return fmt.Errorf("log.scanTopicFiles: unable to open %s: %s", f.Name(), err)
+			return fmt.Errorf("unable to open %s: %s", f.Name(), err)
 		}
 
 		entry, ok, err := nextEntry(csv.NewReader(file), file)
@@ -184,7 +183,7 @@ func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) 
 		entry := heap.Pop(h).(*heapEntry)
 		err := onMessage(types.Message{Offset: entry.offset, Key: entry.key, Value: entry.value})
 		if err != nil {
-			return fmt.Errorf("log.scanTopicFiles: error: %s", err)
+			return fmt.Errorf("error on processing message: %s", err)
 		}
 
 		next, ok, err := nextEntry(entry.reader, entry.file)
@@ -209,12 +208,12 @@ func nextEntry(reader *csv.Reader, file *os.File) (*heapEntry, bool, error) {
 		return nil, false, nil
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("log.scanTopicFiles: error reading record: %s", err)
+		return nil, false, fmt.Errorf("error reading record: %s", err)
 	}
 
 	offset, err := strconv.Atoi(record[0])
 	if err != nil {
-		return nil, false, fmt.Errorf("log.scanTopicFiles: invalid offset %q: %s", record[0], err)
+		return nil, false, fmt.Errorf("invalid offset %q: %s", record[0], err)
 	}
 
 	return &heapEntry{offset: offset, key: record[1], value: record[2], reader: reader, file: file}, true, nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"yet-another-kafka/internals/types"
 )
@@ -53,10 +54,13 @@ func (s *Service) CreateTopic(partitions int) error {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("service.CreateTopic: error connecting with zookeeper: %s", err)
+		return fmt.Errorf("service.CreateTopic: error connecting with broker: %s", err)
 	}
+	defer res.Body.Close()
+
 	if res.StatusCode != 200 {
-		return fmt.Errorf("service.CreateTopic: unable to register with zookeeper, status code: %d", res.StatusCode)
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("service.CreateTopic: error response from broker: %s", string(respBody))
 	}
 
 	return nil
@@ -74,8 +78,11 @@ func (s *Service) Produce(key, value string) error {
 	if err != nil {
 		return fmt.Errorf("service.CreateTopic: error connecting with zookeeper: %s", err)
 	}
+	defer res.Body.Close()
+
 	if res.StatusCode != 200 {
-		return fmt.Errorf("service.CreateTopic: unable to register with zookeeper, status code: %d", res.StatusCode)
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("service.CreateTopic: unable to register with zookeeper: %s", string(respBody))
 	}
 
 	return nil

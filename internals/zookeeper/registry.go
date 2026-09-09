@@ -38,16 +38,16 @@ func (r *Registry) RegisterBroker(broker *Broker) (bool, error) {
 	defer r.mu.Unlock()
 
 	if _, ok := r.brokers[broker.Id]; ok {
-		log.Printf("RegisterBroker: broker (%d) on address(%s) already exists", broker.Id, broker.Address)
+		log.Printf("broker (%d) already exists on address(%s)", broker.Id, broker.Address)
 		return false, ErrBrokerIDConflict
 	}
 
 	isFirstBroker := len(r.brokers) == 0
 	r.brokers[broker.Id] = broker
-	log.Printf("RegisterBroker: registered broker (%d) on address(%s)", broker.Id, broker.Address)
+	log.Printf("registered broker (%d) on address(%s)", broker.Id, broker.Address)
 
 	if isFirstBroker {
-		log.Println("zookeeper: new leader elected: broker id:", broker.Id)
+		log.Println("new leader elected: broker id:", broker.Id)
 		r.leaderId = broker.Id
 	}
 
@@ -89,7 +89,7 @@ func (r *Registry) LeaderHealthCheck(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if r.needsElection() {
-				log.Printf("LeaderHealthCheck: leader dead, election needed")
+				log.Printf("leader dead, election needed")
 				r.election()
 			}
 		case <-ctx.Done():
@@ -112,7 +112,7 @@ func (r *Registry) election() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	log.Println("zookeeper: starting election")
+	log.Println("starting election")
 
 	// remove current leader
 	delete(r.brokers, r.leaderId)
@@ -121,7 +121,7 @@ func (r *Registry) election() {
 	for _, broker := range r.brokers {
 		if retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, broker.SetLeader) {
 			r.leaderId = broker.Id
-			log.Println("zookeeper: new leader elected: broker id:", broker.Id)
+			log.Println("new leader elected: broker id:", broker.Id)
 		} else {
 			delete(r.brokers, r.leaderId)
 		}

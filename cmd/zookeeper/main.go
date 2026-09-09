@@ -35,14 +35,14 @@ func main() {
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", PORT), Handler: r}
 
 	go func() {
-		log.Println("zookeeper: starting on port:", PORT)
+		log.Println("starting zookeeper on port:", PORT)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("zookeeper: shutting down")
+	log.Println("shutting down zookeeper")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

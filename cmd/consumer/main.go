@@ -4,7 +4,10 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"yet-another-kafka/internals/consumer"
 	"yet-another-kafka/internals/types"
 
@@ -20,8 +23,8 @@ func main() {
 	flag.StringVar(&topicName, "topic", "", "name of the topic to be created (required)")
 	flag.IntVar(&partitions, "partitions", 1, "partitions to create the topic with (used if create-topic is true)")
 	flag.BoolVar(&createTopic, "create-topic", false, "create a new topic with given name and partitions")
-	flag.BoolVar(&createTopic, "create-topic", false, "set to true if all messages from the start of topic creation needs to be read")
-	flag.IntVar(&port, "port", 9988, "Port for broker to run")
+	flag.BoolVar(&fromBeginning, "from-beginning", false, "set to true if all messages from the start of topic creation needs to be read")
+	flag.IntVar(&port, "port", 9788, "Port for broker to run")
 	flag.Parse()
 
 	switch {
@@ -47,15 +50,33 @@ func main() {
 		}
 	}
 
+	handlers := consumer.NewHandlers(service)
+	//create server to wait for messages from broker
+	r := mux.NewRouter()
+	r.HandleFunc("/messages", handlers.MessageConsumeHandler).Methods("POST")
+
+	server := &http.Server{
+		Addr:    ":" + strconv.Itoa(port),
+		Handler: r,
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+
 	if err := service.RegisterConsumer(); err != nil {
 		log.Fatal(err)
 	}
 
-	handlers := consumer.NewHandlers(service)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	//create server to wait for messages from broker
-	r := mux.NewRouter()
-	r.HandleFunc("/consume", handlers.MessageConsumeHandler)
+	log.Println("shutting down consumer")
+	if err := server.Close(); err != nil {
+		log.Printf("shutdown error: %v", err)
+	}
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), r))
 }

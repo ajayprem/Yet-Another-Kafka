@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 )
@@ -17,7 +18,7 @@ func localIP() (string, error) {
 func GetLocalAddress(port int) (string, error) {
 	ip, err := localIP()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("unable to get localIP:%s", err)
 	}
 
 	return ip + ":" + strconv.Itoa(port), nil

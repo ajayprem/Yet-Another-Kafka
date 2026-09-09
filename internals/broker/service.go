@@ -30,10 +30,12 @@ func NewService(id int, address string, zookeeperURL string) (*Service, error) {
 
 	logStore, err := newLogStore(id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating service: %s", err)
 	}
 
-	logStore.scanExistingTopics(metadataStore.addTopicMetadata)
+	if err := logStore.scanExistingTopics(metadataStore.addTopicMetadata); err != nil {
+		return nil, fmt.Errorf("error creating service: %s", err)
+	}
 
 	return &Service{
 		id:            id,
@@ -55,15 +57,15 @@ func (s *Service) RegisterWithZookeeper() error {
 	bodyReader := bytes.NewReader(jsonBody)
 	req, err := http.NewRequest(http.MethodPost, url, bodyReader)
 	if err != nil {
-		return fmt.Errorf("Service.RegisterWithZookeeper: error creating request: %s", err)
+		return fmt.Errorf("error creating request: %s", err)
 	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("Service.RegisterWithZookeeper: error connecting with zookeeper: %s", err)
+		return fmt.Errorf("error connecting with zookeeper: %s", err)
 	}
 	if res.StatusCode != 200 {
-		return fmt.Errorf("Service.RegisterWithZookeeper: unable to register with zookeeper, status code: %d", res.StatusCode)
+		return fmt.Errorf("unable to register with zookeeper, status code: %d", res.StatusCode)
 	}
 
 	var resBody types.RegisterBrokerResponse
@@ -80,11 +82,12 @@ func (s *Service) setLeader() {
 
 func (s *Service) createTopic(topicName string, partitions int) error {
 	if s.metadataStore.doesTopicExist(topicName) {
-		return fmt.Errorf("Service.CreateTopic: topic name already exists")
+		return fmt.Errorf("topic name already exists")
 	}
 
 	if err := s.logStore.createTopicFiles(topicName, partitions); err != nil {
-		return err
+		log.Printf("error creating topic files:%s", err)
+		return fmt.Errorf("unable to create topic log files")
 	}
 	s.metadataStore.addTopicMetadata(topicName, partitions, -1)
 	s.logf("created topic:%s with partitions:%d", topicName, partitions)
@@ -93,18 +96,18 @@ func (s *Service) createTopic(topicName string, partitions int) error {
 
 func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	if !s.metadataStore.doesTopicExist(topicName) {
-		return fmt.Errorf("Service.produceMessage: topic(%s) does not exist", topicName)
+		return fmt.Errorf("topic(%s) does not exist", topicName)
 	}
 
-	partition, offset, err := s.metadataStore.nextOffset(topicName, msg.Key)
-	if err != nil {
-		return err
-	}
+	partition, offset, _ := s.metadataStore.nextOffset(topicName, msg.Key)
 
 	if err := s.logStore.appendRecord(topicName, partition, offset, msg); err != nil {
-		return err
+		log.Printf("error appending record:%s", err)
+		return fmt.Errorf("unable to produce record")
 	}
-	return s.consumerStore.notifyConsumers(topicName, msg)
+
+	go s.consumerStore.notifyConsumers(topicName, msg)
+	return nil
 }
 
 func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool) error {
@@ -113,7 +116,8 @@ func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool
 	if fromBegin {
 		err := s.logStore.scanTopicFiles(topicName, c.sendMessage)
 		if err != nil {
-			return fmt.Errorf("Service.addConsumer: %s", err)
+			log.Printf("error scanning topic files: %s", err)
+			return fmt.Errorf("unable to scan existing records from log files")
 		}
 	}
 	return nil

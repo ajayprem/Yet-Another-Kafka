@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"yet-another-kafka/internals/types"
 )
@@ -16,7 +17,7 @@ const (
 )
 
 type Service struct {
-	address string
+	address       string
 	zookeeperURL  string
 	leaderURL     string
 	brokerURL     string
@@ -28,7 +29,7 @@ func NewService(address, zookeeperURL, topicName string, fromBeginning bool) (*S
 	s := &Service{address: address, zookeeperURL: zookeeperURL, topicName: topicName, fromBeginning: fromBeginning}
 	brokerURL, err := s.getBrokerAddress(ZOOKEEPER_BROKER_PATH)
 	if err != nil {
-		return nil, fmt.Errorf("service.NewService error while getting leader broker: %s", err)
+		return nil, fmt.Errorf("error while getting leader broker:%s", err)
 	}
 	s.brokerURL = brokerURL
 	return s, nil
@@ -37,7 +38,7 @@ func NewService(address, zookeeperURL, topicName string, fromBeginning bool) (*S
 func (s *Service) CreateTopic(partitions int) error {
 	leaderURL, err := s.getBrokerAddress(ZOOKEEPER_LEADER_PATH)
 	if err != nil {
-		return fmt.Errorf("service.CreateTopic: error creating topic: %s", err)
+		return fmt.Errorf("error creating topic: %s", err)
 	}
 
 	url := fmt.Sprintf("http://%s%s", s.brokerURL, leaderURL)
@@ -49,10 +50,12 @@ func (s *Service) CreateTopic(partitions int) error {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("service.CreateTopic: error connecting with leader broker: %s", err)
+		return fmt.Errorf("error connecting with leader broker:%s", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return fmt.Errorf("service.CreateTopic: unable to register with leader broker, status code: %d", res.StatusCode)
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unable to register with leader broker:%s", string(respBody))
 	}
 
 	return nil
@@ -66,17 +69,19 @@ func (s *Service) RegisterConsumer() error {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("service.RegisterConsumer: error connecting with broker: %s", err)
+		return fmt.Errorf("error connecting with broker:%s", err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return fmt.Errorf("service.RegisterConsumer: unable to register with broker, status code: %d", res.StatusCode)
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unable to register with broker:%s", string(respBody))
 	}
 
 	return nil
 }
 
 func (s *Service) consume(msg types.Message) {
-	fmt.Printf("offset=%d key=%q value=%q\n",
+	fmt.Printf("> offset=%d key=%q value=%q\n",
 		msg.Offset,
 		msg.Key,
 		msg.Value,

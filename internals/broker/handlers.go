@@ -30,7 +30,10 @@ func (h *Handlers) CreateTopicHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.service.createTopic(topic.TopicName, topic.Partitions)
+	if err := h.service.createTopic(topic.TopicName, topic.Partitions); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *Handlers) ProduceHandler(w http.ResponseWriter, r *http.Request) {
