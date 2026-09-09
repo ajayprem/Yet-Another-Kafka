@@ -2,6 +2,7 @@ package zookeeper
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -19,6 +20,7 @@ func (b *Broker) IsAlive() bool {
 	url := fmt.Sprintf("http://%s%s", b.Address, HEALTH_CHECK_PATH)
 	res, err := http.Get(url)
 	if err != nil {
+		log.Printf("error while checking broker health: %s", err)
 		return false
 	}
 	defer res.Body.Close()

@@ -129,5 +129,5 @@ func (r *Registry) election() {
 }
 
 func isAlive(b *Broker) bool {
-	return !retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, b.IsAlive)
+	return retry.Do(MAX_FAIL_RETRY, ELECTION_BASE_DELAY, ELECTION_MAX_DELAY, b.IsAlive)
 }

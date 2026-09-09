@@ -57,7 +57,7 @@ func (l *logStore) createTopicFiles(topicName string, partitions int) error {
 
 	for partition := range partitions {
 		fileName := fmt.Sprintf(LOG_FILE_FORMAT, topicName, partition)
-		file, err := os.Create(filepath.Join(fileName, "log.txt"))
+		file, err := os.Create(fileName)
 		if err != nil {
 			return fmt.Errorf("newLogStore.createTopicFiles: error creating log file: %s", err)
 		}

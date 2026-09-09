@@ -48,7 +48,7 @@ func main() {
 	r.HandleFunc("/produce", h.ProduceHandler).Methods("POST")
 	r.HandleFunc("/consume", h.ConsumeHandler).Methods("POST")
 	r.HandleFunc("/health", h.HealthHandler).Methods("GET")
-	r.HandleFunc("/leader", h.SetLeaderHandler).Methods("GET")
+	r.HandleFunc("/leader", h.SetLeaderHandler).Methods("POST")
 
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), r))
 }

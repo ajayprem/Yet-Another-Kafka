@@ -55,22 +55,22 @@ func (s *Service) RegisterWithZookeeper() error {
 	bodyReader := bytes.NewReader(jsonBody)
 	req, err := http.NewRequest(http.MethodPost, url, bodyReader)
 	if err != nil {
-		return fmt.Errorf("broker: error creating request: %s", err)
+		return fmt.Errorf("Service.RegisterWithZookeeper: error creating request: %s", err)
 	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("broker: error connecting with zookeeper: %s", err)
+		return fmt.Errorf("Service.RegisterWithZookeeper: error connecting with zookeeper: %s", err)
 	}
 	if res.StatusCode != 200 {
-		return fmt.Errorf("broker: unable to register with zookeeper, status code: %d", res.StatusCode)
+		return fmt.Errorf("Service.RegisterWithZookeeper: unable to register with zookeeper, status code: %d", res.StatusCode)
 	}
 
 	var resBody types.RegisterBrokerResponse
 	json.NewDecoder(res.Body).Decode(&resBody)
 
 	s.isLeader = resBody.IsLeader
-	log.Printf("RegisterWithZookeeper: successfully registered broker, isLeader=%t", s.isLeader)
+	s.logf("successfully registered broker")
 	return nil
 }
 
@@ -83,17 +83,17 @@ func (s *Service) createTopic(topicName string, partitions int) error {
 		return fmt.Errorf("Service.CreateTopic: topic name already exists")
 	}
 
-	// offset starts at -1
 	if err := s.logStore.createTopicFiles(topicName, partitions); err != nil {
 		return err
 	}
 	s.metadataStore.addTopicMetadata(topicName, partitions, -1)
+	s.logf("created topic:%s with partitions:%d", topicName, partitions)
 	return nil
 }
 
 func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	if !s.metadataStore.doesTopicExist(topicName) {
-		return fmt.Errorf("service.produceMessage: topic(%s) does not exist", topicName)
+		return fmt.Errorf("Service.produceMessage: topic(%s) does not exist", topicName)
 	}
 
 	partition, offset, err := s.metadataStore.nextOffset(topicName, msg.Key)
@@ -110,8 +110,13 @@ func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool
 	if fromBegin {
 		err := s.logStore.scanTopicFiles(topicName, c.sendMessage)
 		if err != nil {
-			return fmt.Errorf("service.addConsumer: %s", err)
+			return fmt.Errorf("Service.addConsumer: %s", err)
 		}
 	}
 	return nil
+}
+
+func (s *Service) logf(format string, args ...any) {
+	prefix := fmt.Sprintf("[brokerId:%d isLeader:%t] ", s.id, s.isLeader)
+	log.Printf(prefix+format, args...)
 }
