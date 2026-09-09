@@ -101,7 +101,10 @@ func (s *Service) produceMessage(topicName string, msg types.Message) error {
 		return err
 	}
 
-	return s.logStore.appendRecord(topicName, partition, offset, msg)
+	if err := s.logStore.appendRecord(topicName, partition, offset, msg); err != nil {
+		return err
+	}
+	return s.consumerStore.notifyConsumers(topicName, msg)
 }
 
 func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool) error {

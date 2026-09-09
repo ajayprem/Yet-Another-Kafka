@@ -41,7 +41,7 @@ func (c *consumer) sendMessage(msg types.Message) error {
 }
 
 type consumerStore struct {
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	topicConsumerMap map[string][]*consumer
 }
 
@@ -52,12 +52,26 @@ func newConsumerStore() *consumerStore {
 }
 
 // TODO: improve error handling
-func (cs *consumerStore) addConsumer(c *consumer, topicname string) {
+func (cs *consumerStore) addConsumer(c *consumer, topicName string) {
 	cs.mu.Lock()
-	consumers, ok := cs.topicConsumerMap[topicname]
+	defer cs.mu.Unlock()
+	consumers, ok := cs.topicConsumerMap[topicName]
 	if !ok {
-		cs.topicConsumerMap[topicname] = make([]*consumer, 0)
+		cs.topicConsumerMap[topicName] = make([]*consumer, 0)
 	} else {
 		consumers = append(consumers, c)
 	}
+}
+
+func (cs *consumerStore) notifyConsumers(topicName string, msg types.Message) error {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	if consumers, ok := cs.topicConsumerMap[topicName]; ok {
+		for _, c := range consumers {
+			if err := c.sendMessage(msg); err != nil {
+				return fmt.Errorf("error notifying consumers: %s", err)
+			}
+		}
+	}
+	return nil
 }
