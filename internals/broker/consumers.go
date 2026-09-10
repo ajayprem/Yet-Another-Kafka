@@ -53,17 +53,15 @@ func newConsumerStore() *consumerStore {
 	}
 }
 
-// TODO: improve error handling
+// TODO: improve error handling + duplicates handling
 func (cs *consumerStore) addConsumer(c *consumer, topicName string) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	consumers, ok := cs.topicConsumerMap[topicName]
+	_, ok := cs.topicConsumerMap[topicName]
 	if !ok {
 		cs.topicConsumerMap[topicName] = make([]*consumer, 0)
-	} else {
-		consumers = append(consumers, c)
-		cs.topicConsumerMap[topicName] = consumers
 	}
+	cs.topicConsumerMap[topicName] = append(cs.topicConsumerMap[topicName], c)
 }
 
 // TODO: see if this can be multi threaded somehow
@@ -74,7 +72,6 @@ func (cs *consumerStore) notifyConsumers(topicName string, msg types.Message) er
 		for _, c := range consumers {
 			if err := c.sendMessage(msg); err != nil {
 				log.Printf("error notfying consumer:%s", err)
-				return fmt.Errorf("error notifying consumers: %s", err)
 			}
 		}
 	}
