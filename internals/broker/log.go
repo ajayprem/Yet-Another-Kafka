@@ -9,10 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"yet-another-kafka/internals/types"
 )
-
-// TODO: lock all file operations in this file
 
 const (
 	LOCATION_PREFIX = "/tmp"
@@ -23,7 +22,9 @@ const (
 )
 
 type logStore struct {
-	location string
+	mu        sync.Mutex
+	location  string
+	topics map[string]struct{}
 }
 
 func newLogStore(brokerId int) (*logStore, error) {
@@ -66,7 +67,7 @@ func (l *logStore) createTopicFiles(topicName string, partitions int) error {
 	return nil
 }
 
-// TODO: make thread safe -> two producers writing to the same topic
+// This operation is topic locked since offset increment must happen at topic level
 func (l *logStore) appendRecord(topicName string, partition, offset int, msg types.Message) error {
 	fileName := fmt.Sprintf(LOG_FILE_FORMAT, topicName, partition)
 	file, err := os.OpenFile(filepath.Join(l.getTopicDir(topicName), fileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

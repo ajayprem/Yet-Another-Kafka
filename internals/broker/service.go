@@ -99,9 +99,8 @@ func (s *Service) produceMessage(topicName string, msg types.Message) error {
 		return fmt.Errorf("topic(%s) does not exist", topicName)
 	}
 
-	partition, offset, _ := s.metadataStore.nextOffset(topicName, msg.Key)
-
-	if err := s.logStore.appendRecord(topicName, partition, offset, msg); err != nil {
+	// increment offset and log append as one atomic operation
+	if err := s.metadataStore.incrementOffset(topicName, msg, s.logStore.appendRecord); err != nil {
 		log.Printf("error appending record:%s", err)
 		return fmt.Errorf("unable to produce record")
 	}
@@ -114,11 +113,12 @@ func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool
 	c := &consumer{consumerURL}
 	s.consumerStore.addConsumer(c, topicName)
 	if fromBegin {
-		err := s.logStore.scanTopicFiles(topicName, c.sendMessage)
-		if err != nil {
-			log.Printf("error scanning topic files: %s", err)
-			return fmt.Errorf("unable to scan existing records from log files")
-		}
+		s.metadataStore.withReadLock(topicName, func() error {
+			if err := s.logStore.scanTopicFiles(topicName, c.sendMessage); err != nil {
+				return err
+			}
+			return nil
+		})
 	}
 	return nil
 }
