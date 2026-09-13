@@ -1,24 +1,26 @@
 package broker
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
+	"sync"
+	"time"
+	"yet-another-kafka/internals/retry"
 	types "yet-another-kafka/internals/types"
 )
 
 const (
-	DEFAULT_PARTITIONS             = 0
-	ZOOKEEPER_BROKER_REGISTER_PATH = "/brokers"
+	REGISTER_SYNC_MAX_RETRY  = 3
+	REGISTER_SYNC_BASE_DELAY = time.Duration(100 * time.Millisecond)
+	REGISTER_SYNC_MAX_DELAY  = time.Duration(1 * time.Second)
 )
 
 type Service struct {
 	id            int
 	address       string
 	isLeader      bool
-	zookeeperURL  string
+	leader        *leader
+	zookeeper     *zookeeper
 	metadataStore *metadataStore
 	logStore      *logStore
 	consumerStore *consumerStore
@@ -41,38 +43,50 @@ func NewService(id int, address string, zookeeperURL string) (*Service, error) {
 		id:            id,
 		address:       address,
 		isLeader:      false,
-		zookeeperURL:  zookeeperURL,
+		zookeeper:     newZookeeper(zookeeperURL),
 		metadataStore: metadataStore,
 		logStore:      logStore,
 		consumerStore: newConsumerStore(),
 	}, nil
 }
 
-// Register the broker with zookeeper, if calls to zookeeper fail
+// Register the broker with zookeeper
 func (s *Service) RegisterWithZookeeper() error {
-	body := types.RegisterBrokerRequest{Id: s.id, Address: s.address}
-	url := fmt.Sprintf("http://%s%s", s.zookeeperURL, ZOOKEEPER_BROKER_REGISTER_PATH)
+	if !retry.Do(REGISTER_SYNC_MAX_RETRY, REGISTER_SYNC_BASE_DELAY, REGISTER_SYNC_MAX_DELAY, func() bool {
+		// register with zookeeper to find the leader
+		isLeader, leaderAddress, err := s.zookeeper.registerBroker(s.id, s.address, false)
+		if err != nil {
+			log.Printf("error registering broker:%s", err)
+			return false
+		}
+		if isLeader {
+			s.isLeader = true
+			return true
+		}
 
-	jsonBody, _ := json.Marshal(body)
-	bodyReader := bytes.NewReader(jsonBody)
-	req, err := http.NewRequest(http.MethodPost, url, bodyReader)
-	if err != nil {
-		return fmt.Errorf("error creating request: %s", err)
+		// if broker is not the leader, then get all logs from the leader from our current state
+		s.leader = newLeader(leaderAddress)
+		if err := s.syncWithLeader(); err != nil {
+			log.Printf("error syncing with leader(%s):%s", s.leader.url, err)
+			return false
+		}
+
+		return true
+	}) {
+		return fmt.Errorf("unable to register broker with zookeeper")
 	}
 
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("error connecting with zookeeper: %s", err)
-	}
-	if res.StatusCode != 200 {
-		return fmt.Errorf("unable to register with zookeeper, status code: %d", res.StatusCode)
+	// final register after sync with leader
+	if !s.isLeader {
+		isLeader, leaderAddress, err := s.zookeeper.registerBroker(s.id, s.address, true)
+		if err != nil {
+			log.Printf("error registering with zookeeper after sync:%s", err)
+			return fmt.Errorf("error registering with zookeeper after sync")
+		}
+		s.isLeader = isLeader
+		s.leader = newLeader(leaderAddress)
 	}
 
-	var resBody types.RegisterBrokerResponse
-	json.NewDecoder(res.Body).Decode(&resBody)
-
-	s.isLeader = resBody.IsLeader
-	s.logf("successfully registered broker")
 	return nil
 }
 
@@ -113,14 +127,71 @@ func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool
 	c := &consumer{consumerURL}
 	s.consumerStore.addConsumer(c, topicName)
 	if fromBegin {
+		var allMessages []types.Message
 		s.metadataStore.withReadLock(topicName, func() error {
-			if err := s.logStore.scanTopicFiles(topicName, c.sendMessage); err != nil {
+			messages, err := s.logStore.getMessagesFromOffset(topicName, 0)
+			if err != nil {
 				return err
 			}
+			allMessages = messages
 			return nil
 		})
+
+		for _, message := range allMessages {
+			c.sendMessage(message)
+		}
 	}
 	return nil
+}
+
+// TODO: currently implemented by using existing append method, but this wastes CPU as a file
+// is repeatedly opened and closed for long messages.
+// TODO: we assume offset sent by leader is always safe to apply, fix this
+func (s *Service) applyMessages(topicName string, messages []types.Message) {
+	for _, msg := range messages {
+		// increment offset and log append as one atomic operation
+		if err := s.metadataStore.incrementOffset(topicName, msg, s.logStore.appendRecord); err != nil {
+			log.Printf("error appending record:%s", err)
+			break
+		}
+	}
+}
+
+func (s *Service) syncWithLeader() error {
+	topicMessages, err := s.leader.sync(s.metadataStore.generateSyncRequest())
+	if err != nil {
+		return err
+	}
+	var wg sync.WaitGroup
+	for _, t := range topicMessages.TopicMessageList {
+		wg.Add(1)
+		go s.applyMessages(t.TopicName, t.Messages)
+	}
+	wg.Wait()
+	return nil
+}
+
+// send messages from a given offset to the follower
+func (s *Service) syncMessages(req types.SyncRequest) (types.SyncResponse, error) {
+	var result types.SyncResponse
+
+	for _, t := range req.TopicOffsetList {
+		var messagesFromOffset []types.Message
+		if err := s.metadataStore.withReadLock(t.TopicName, func() error {
+			messages, err := s.logStore.getMessagesFromOffset(t.TopicName, t.Offset)
+			if err != nil {
+				return err
+			}
+			messagesFromOffset = messages
+			return nil
+		}); err != nil {
+			log.Printf("error sycning messages:%s", err)
+			return types.SyncResponse{}, fmt.Errorf("error syncing messages")
+		}
+		result.TopicMessageList = append(result.TopicMessageList, types.TopicMessage{TopicName: t.TopicName, Messages: messagesFromOffset})
+	}
+
+	return result, nil
 }
 
 func (s *Service) logf(format string, args ...any) {

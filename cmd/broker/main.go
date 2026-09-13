@@ -44,6 +44,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/topics", h.CreateTopicHandler).Methods("POST")
+	r.HandleFunc("/sync", h.SyncHandler).Methods("POST")
 	// TODO: convert this to POST /topics/<topic>/messages for produce and /consumers for consumers
 	r.HandleFunc("/produce", h.ProduceHandler).Methods("POST")
 	r.HandleFunc("/consume", h.ConsumeHandler).Methods("POST")

@@ -23,6 +23,22 @@ func (h *Handlers) SetLeaderHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
+func (h *Handlers) SyncHandler(w http.ResponseWriter, r *http.Request) {
+	var SyncRequest types.SyncRequest
+	if err := json.NewDecoder(r.Body).Decode(&SyncRequest); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.service.syncMessages(SyncRequest)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
 func (h *Handlers) CreateTopicHandler(w http.ResponseWriter, r *http.Request) {
 	var topic types.CreateTopicRequest
 	if err := json.NewDecoder(r.Body).Decode(&topic); err != nil {

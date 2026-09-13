@@ -78,5 +78,4 @@ func main() {
 	if err := server.Close(); err != nil {
 		log.Printf("shutdown error: %v", err)
 	}
-
 }

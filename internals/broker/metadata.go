@@ -45,6 +45,16 @@ func (m *metadataStore) addTopicMetadata(topicName string, partitions, offset in
 	m.topics[topicName] = &topicMetaData{partitions: partitions, offset: offset}
 }
 
+func (m *metadataStore) generateSyncRequest() types.SyncRequest {
+	result := types.SyncRequest{TopicOffsetList: make([]types.TopicOffset, 0)}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for topicName, meta := range m.topics {
+		result.TopicOffsetList = append(result.TopicOffsetList, types.TopicOffset{TopicName: topicName, Offset: meta.offset})
+	}
+	return result
+}
+
 type opFunc func(topicName string, partition, offset int, msg types.Message) error
 
 func (m *metadataStore) incrementOffset(topicName string, msg types.Message, op opFunc) error {

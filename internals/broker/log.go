@@ -22,9 +22,9 @@ const (
 )
 
 type logStore struct {
-	mu        sync.Mutex
-	location  string
-	topics map[string]struct{}
+	mu       sync.Mutex
+	location string
+	topics   map[string]struct{}
 }
 
 func newLogStore(brokerId int) (*logStore, error) {
@@ -121,8 +121,6 @@ func (l *logStore) scanExistingTopics(onFound topicFoundFunc) error {
 	return nil
 }
 
-type messageFoundFunc func(msg types.Message) error
-
 // heapEntry tracks one open partition file's current front-of-queue record
 type heapEntry struct {
 	offset int
@@ -147,11 +145,11 @@ func (h *heapEntries) Pop() any {
 	return item
 }
 
-func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) error {
+func (l *logStore) getMessagesFromOffset(topicName string, offset int) ([]types.Message, error) {
 	topicDir := l.getTopicDir(topicName)
 	files, err := os.ReadDir(topicDir)
 	if err != nil {
-		return fmt.Errorf("unable to read topic dir: %s", err)
+		return nil, fmt.Errorf("unable to read topic dir: %s", err)
 	}
 
 	h := &heapEntries{}
@@ -164,13 +162,13 @@ func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) 
 		}
 		file, err := os.Open(filepath.Join(topicDir, f.Name()))
 		if err != nil {
-			return fmt.Errorf("unable to open %s: %s", f.Name(), err)
+			return nil, fmt.Errorf("unable to open %s: %s", f.Name(), err)
 		}
 
 		entry, ok, err := nextEntry(csv.NewReader(file), file)
 		if err != nil {
 			file.Close()
-			return err
+			return nil, err
 		}
 		if ok {
 			heap.Push(h, entry)
@@ -179,18 +177,18 @@ func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) 
 		}
 	}
 
+	messages := []types.Message{}
+
 	// repeatedly pop the globally smallest offset, refill from the same file
 	for h.Len() > 0 {
 		entry := heap.Pop(h).(*heapEntry)
-		err := onMessage(types.Message{Offset: entry.offset, Key: entry.key, Value: entry.value})
-		if err != nil {
-			return fmt.Errorf("error on processing message: %s", err)
+		if entry.offset >= offset {
+			messages = append(messages, types.Message{Key: entry.key, Value: entry.value, Offset: entry.offset})
 		}
-
 		next, ok, err := nextEntry(entry.reader, entry.file)
 		if err != nil {
 			entry.file.Close()
-			return err
+			return nil, err
 		}
 		if ok {
 			heap.Push(h, next)
@@ -199,7 +197,7 @@ func (l *logStore) scanTopicFiles(topicName string, onMessage messageFoundFunc) 
 		}
 	}
 
-	return nil
+	return messages, nil
 }
 
 // nextEntry reads and parses the next CSV record. ok=false, err=nil means EOF.
