@@ -14,15 +14,15 @@ const (
 )
 
 type leader struct {
-	url string
+	address string
 }
 
 func newLeader(url string) *leader {
-	return &leader{url: url}
+	return &leader{address: url}
 }
 
 func (l *leader) sync(topicOffsetList types.SyncRequest) (types.SyncResponse, error) {
-	url := fmt.Sprintf("http://%s%s", l.url, LEADER_SYNC_URL)
+	url := fmt.Sprintf("http://%s%s", l.address, LEADER_SYNC_URL)
 	jsonBody, _ := json.Marshal(topicOffsetList)
 	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonBody))
 
@@ -37,6 +37,6 @@ func (l *leader) sync(topicOffsetList types.SyncRequest) (types.SyncResponse, er
 	}
 
 	var resBody types.SyncResponse
-	json.NewDecoder(res.Body).Decode(resBody)
+	json.NewDecoder(res.Body).Decode(&resBody)
 	return resBody, nil
 }

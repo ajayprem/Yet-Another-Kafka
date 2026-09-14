@@ -65,7 +65,7 @@ func (cs *consumerStore) addConsumer(c *consumer, topicName string) {
 }
 
 // TODO: see if this can be multi threaded somehow
-func (cs *consumerStore) notifyConsumers(topicName string, msg types.Message) error {
+func (cs *consumerStore) notifyConsumers(topicName string, msg types.Message) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	if consumers, ok := cs.topicConsumerMap[topicName]; ok {
@@ -75,5 +75,4 @@ func (cs *consumerStore) notifyConsumers(topicName string, msg types.Message) er
 			}
 		}
 	}
-	return nil
 }

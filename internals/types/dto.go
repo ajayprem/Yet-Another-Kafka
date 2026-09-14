@@ -27,6 +27,17 @@ type ProduceMessageRequest struct {
 	Value     string `json:"value"`
 }
 
+type FollowMessageRequest struct {
+	TopicName string `json:"topic_name"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Offset    int    `json:"offset"`
+}
+
+type FollowMessageResponse struct {
+	LastOffset int `json:"last_offset"`
+}
+
 type RegisterConsumerRequest struct {
 	TopicName     string `json:"topic_name"`
 	Address       string `json:"address"`

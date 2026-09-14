@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"syscall"
 	"yet-another-kafka/internals/consumer"
-	"yet-another-kafka/internals/types"
+	"yet-another-kafka/internals/network"
 
 	"github.com/gorilla/mux"
 )
@@ -34,7 +34,7 @@ func main() {
 		log.Fatal("error: -zookeeper is required")
 	}
 
-	address, err := types.GetLocalAddress(port)
+	address, err := network.GetLocalAddress(port)
 	if err != nil {
 		log.Fatal(err)
 	}

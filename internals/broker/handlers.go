@@ -66,6 +66,22 @@ func (h *Handlers) ProduceHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
+func (h *Handlers) FollowHandler(w http.ResponseWriter, r *http.Request) {
+	var produceMesssage types.FollowMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&produceMesssage); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	lastOffset, err := h.service.apply(produceMesssage.TopicName, types.Message{Key: produceMesssage.Key, Value: produceMesssage.Value, Offset: produceMesssage.Offset})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.FollowMessageResponse{LastOffset: lastOffset})
+}
+
 func (h *Handlers) ConsumeHandler(w http.ResponseWriter, r *http.Request) {
 	var registerConsumer types.RegisterConsumerRequest
 	if err := json.NewDecoder(r.Body).Decode(&registerConsumer); err != nil {

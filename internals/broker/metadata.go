@@ -39,6 +39,17 @@ func (m *metadataStore) getTopicMetadata(topicName string) (*topicMetaData, bool
 	return topicMetadata, ok
 }
 
+func (m *metadataStore) getTopicOffset(topicName string) (int, bool) {
+	meta, ok := m.getTopicMetadata(topicName)
+	if !ok {
+		return 0, ok
+	}
+
+	meta.topicLock.RLock()
+	defer meta.topicLock.RUnlock()
+	return meta.offset, true
+}
+
 func (m *metadataStore) addTopicMetadata(topicName string, partitions, offset int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -73,6 +84,27 @@ func (m *metadataStore) incrementOffset(topicName string, msg types.Message, op 
 	}
 	meta.offset = nextOffset
 	return nil
+}
+
+func (m *metadataStore) incrementOffsetIfExpected(topicName string, msg types.Message, op opFunc) (int, error) {
+	meta, ok := m.getTopicMetadata(topicName)
+	if !ok {
+		return 0, fmt.Errorf("metadata: topic %q does not exist", topicName)
+	}
+
+	meta.topicLock.Lock()
+	defer meta.topicLock.Unlock()
+
+	partition := getPartition(msg.Key, meta.partitions)
+	nextOffset := meta.offset + 1
+	if nextOffset != msg.Offset {
+		return msg.Offset, nil
+	}
+	if err := op(topicName, partition, nextOffset, msg); err != nil {
+		return 0, err
+	}
+	meta.offset = nextOffset
+	return nextOffset, nil
 }
 
 type readLockFunc func() error

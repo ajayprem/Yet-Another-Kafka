@@ -23,6 +23,7 @@ type Service struct {
 	zookeeper     *zookeeper
 	metadataStore *metadataStore
 	logStore      *logStore
+	followerStore *followerStore
 	consumerStore *consumerStore
 }
 
@@ -67,7 +68,7 @@ func (s *Service) RegisterWithZookeeper() error {
 		// if broker is not the leader, then get all logs from the leader from our current state
 		s.leader = newLeader(leaderAddress)
 		if err := s.syncWithLeader(); err != nil {
-			log.Printf("error syncing with leader(%s):%s", s.leader.url, err)
+			log.Printf("error syncing with leader(%s):%s", s.leader.address, err)
 			return false
 		}
 
@@ -94,6 +95,7 @@ func (s *Service) setLeader() {
 	s.isLeader = true
 }
 
+// TODO: gate it for the followers
 func (s *Service) createTopic(topicName string, partitions int) error {
 	if s.metadataStore.doesTopicExist(topicName) {
 		return fmt.Errorf("topic name already exists")
@@ -105,6 +107,7 @@ func (s *Service) createTopic(topicName string, partitions int) error {
 	}
 	s.metadataStore.addTopicMetadata(topicName, partitions, -1)
 	s.logf("created topic:%s with partitions:%d", topicName, partitions)
+	go s.followerStore.createTopic(topicName, partitions)
 	return nil
 }
 
@@ -120,7 +123,27 @@ func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	}
 
 	go s.consumerStore.notifyConsumers(topicName, msg)
+	go s.followerStore.applyMessage(topicName, msg)
 	return nil
+}
+
+// apply messages produced by the leader
+func (s *Service) apply(topicName string, msg types.Message) (int, error) {
+	if !s.metadataStore.doesTopicExist(topicName) {
+		return -1, nil
+	}
+
+	// increment offset and log append as one atomic operation
+	lastOffset, err := s.metadataStore.incrementOffsetIfExpected(topicName, msg, s.logStore.appendRecord)
+	if err != nil {
+		log.Printf("error appending record:%s", err)
+		return 0, fmt.Errorf("unable to produce record")
+	}
+
+	if lastOffset == msg.Offset {
+		go s.consumerStore.notifyConsumers(topicName, msg)
+	}
+	return lastOffset, nil
 }
 
 func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool) error {
@@ -197,4 +220,38 @@ func (s *Service) syncMessages(req types.SyncRequest) (types.SyncResponse, error
 func (s *Service) logf(format string, args ...any) {
 	prefix := fmt.Sprintf("[brokerId:%d isLeader:%t] ", s.id, s.isLeader)
 	log.Printf(prefix+format, args...)
+}
+
+func (s *Service) runBackfillWorker() {
+	for req := range s.followerStore.backfillCh {
+		s.backfillFollower(req)
+	}
+}
+
+func (s *Service) backfillFollower(req backfillRequest) {
+	var messagesFromOffset []types.Message
+
+	if err := s.metadataStore.withReadLock(req.topicName, func() error {
+		messages, err := s.logStore.getMessagesFromOffset(req.topicName, req.lastOffset)
+		if err != nil {
+			return err
+		}
+		messagesFromOffset = messages
+		return nil
+	}); err != nil {
+		log.Printf("error sycning messages:%s", err)
+		return
+	}
+
+	for _, message := range messagesFromOffset {
+		lastOffset, err := req.follower.apply(req.topicName, message)
+		if err != nil {
+			log.Printf("error backfilling follower(%s):%s", req.follower.address, err)
+			return
+		}
+		if lastOffset != message.Offset {
+			log.Printf("stopping backfill for follower(%s), since offset mismatch", req.follower.address)
+			return
+		}
+	}
 }

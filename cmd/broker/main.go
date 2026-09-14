@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	broker "yet-another-kafka/internals/broker"
-	types "yet-another-kafka/internals/types"
+	"yet-another-kafka/internals/network"
 
 	"github.com/gorilla/mux"
 )
@@ -26,7 +26,7 @@ func main() {
 		log.Fatal("error: -zookeeper is required")
 	}
 
-	address, err := types.GetLocalAddress(port)
+	address, err := network.GetLocalAddress(port)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,6 +47,7 @@ func main() {
 	r.HandleFunc("/sync", h.SyncHandler).Methods("POST")
 	// TODO: convert this to POST /topics/<topic>/messages for produce and /consumers for consumers
 	r.HandleFunc("/produce", h.ProduceHandler).Methods("POST")
+	r.HandleFunc("/follow", h.FollowHandler).Methods("POST")
 	r.HandleFunc("/consume", h.ConsumeHandler).Methods("POST")
 	r.HandleFunc("/health", h.HealthHandler).Methods("GET")
 	r.HandleFunc("/leader", h.SetLeaderHandler).Methods("POST")
