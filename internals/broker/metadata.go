@@ -73,9 +73,9 @@ func (m *metadataStore) generateSyncRequest() map[string]int {
 
 func (m *metadataStore) getAllTopicNamesNotInMap(topicOffsetMap map[string]int) map[string]int {
 	m.mu.RLock()
-	m.mu.Unlock()
+	defer m.mu.RUnlock()
 
-	var topicPartitionMap map[string]int
+	topicPartitionMap := make(map[string]int)
 	for topicName, meta := range m.topics {
 		if _, ok := topicOffsetMap[topicName]; !ok {
 			topicPartitionMap[topicName] = meta.partitions
