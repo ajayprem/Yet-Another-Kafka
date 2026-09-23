@@ -28,10 +28,11 @@ type ProduceMessageRequest struct {
 }
 
 type FollowMessageRequest struct {
-	TopicName string `json:"topic_name"`
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	Offset    int    `json:"offset"`
+	TopicName  string `json:"topic_name"`
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	Offset     int    `json:"offset"`
+	Partitions int    `json:"partitions"`
 }
 
 type FollowMessageResponse struct {
@@ -50,18 +51,15 @@ type ConsumerMessageData struct {
 	Value  string `json:"value"`
 }
 
-type TopicOffset struct {
-	TopicName string `json:"topic_name"`
-	Offset    int    `json:"offset"`
-}
-
 type SyncRequest struct {
-	TopicOffsetList []TopicOffset `json:"topic_offset_list"`
+	TopicOffsetMap  map[string]int `json:"topic_offset_map"`
+	FollowerAddress string         `json:"follower_address"`
 }
 
 type TopicMessage struct {
-	TopicName string    `json:"topic_name"`
-	Messages  []Message `json:"message_list"`
+	TopicName  string    `json:"topic_name"`
+	Partitions int       `json:"partitions"`
+	Messages   []Message `json:"message_list"`
 }
 
 type SyncResponse struct {

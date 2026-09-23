@@ -30,7 +30,7 @@ func (h *Handlers) SyncHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.service.syncMessages(SyncRequest)
+	res, err := h.service.syncMessages(SyncRequest.FollowerAddress, SyncRequest.TopicOffsetMap)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -67,13 +67,13 @@ func (h *Handlers) ProduceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) FollowHandler(w http.ResponseWriter, r *http.Request) {
-	var produceMesssage types.FollowMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&produceMesssage); err != nil {
+	var followMessage types.FollowMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&followMessage); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	lastOffset, err := h.service.apply(produceMesssage.TopicName, types.Message{Key: produceMesssage.Key, Value: produceMesssage.Value, Offset: produceMesssage.Offset})
+	lastOffset, err := h.service.apply(followMessage.TopicName, followMessage.Partitions, types.Message{Key: followMessage.Key, Value: followMessage.Value, Offset: followMessage.Offset})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -47,8 +47,8 @@ func (f *follower) createTopic(topicName string, partitions int) error {
 	return nil
 }
 
-func (f *follower) apply(topicName string, msg types.Message) (int, error) {
-	body, err := json.Marshal(types.FollowMessageRequest{TopicName: topicName, Key: msg.Key, Value: msg.Value, Offset: msg.Offset})
+func (f *follower) apply(topicName string, partitions int, msg types.Message) (int, error) {
+	body, err := json.Marshal(types.FollowMessageRequest{TopicName: topicName, Partitions: partitions, Key: msg.Key, Value: msg.Value, Offset: msg.Offset})
 	if err != nil {
 		return 0, fmt.Errorf("marshal follow message: %s", err)
 	}
@@ -108,16 +108,15 @@ func (fs *followerStore) createTopic(topicName string, partitions int) {
 	}
 }
 
-func (fs *followerStore) applyMessage(topicName string, msg types.Message) {
+func (fs *followerStore) applyMessage(topicName string, partitions int, msg types.Message) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	for _, follower := range fs.followers {
-		lastOffset, err := follower.apply(topicName, msg)
+		lastOffset, err := follower.apply(topicName, partitions, msg)
 		if err != nil {
-			log.Printf("error creating topic on follower(%s):%s", follower.address, err)
-		}
-		if lastOffset != msg.Offset {
+			log.Printf("error applying message on follower(%s):%s", follower.address, err)
+		} else if lastOffset != msg.Offset {
 			fs.requestBackfil(follower, topicName, lastOffset)
 		}
 	}

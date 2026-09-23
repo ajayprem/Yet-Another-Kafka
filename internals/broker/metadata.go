@@ -50,20 +50,39 @@ func (m *metadataStore) getTopicOffset(topicName string) (int, bool) {
 	return meta.offset, true
 }
 
+func (m *metadataStore) getTopicPartitions(topicName string) int {
+	meta, _ := m.getTopicMetadata(topicName)
+	return meta.partitions
+}
+
 func (m *metadataStore) addTopicMetadata(topicName string, partitions, offset int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.topics[topicName] = &topicMetaData{partitions: partitions, offset: offset}
 }
 
-func (m *metadataStore) generateSyncRequest() types.SyncRequest {
-	result := types.SyncRequest{TopicOffsetList: make([]types.TopicOffset, 0)}
+func (m *metadataStore) generateSyncRequest() map[string]int {
+	result := make(map[string]int)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for topicName, meta := range m.topics {
-		result.TopicOffsetList = append(result.TopicOffsetList, types.TopicOffset{TopicName: topicName, Offset: meta.offset})
+		result[topicName] = meta.offset
 	}
 	return result
+}
+
+func (m *metadataStore) getAllTopicNamesNotInMap(topicOffsetMap map[string]int) map[string]int {
+	m.mu.RLock()
+	m.mu.Unlock()
+
+	var topicPartitionMap map[string]int
+	for topicName, meta := range m.topics {
+		if _, ok := topicOffsetMap[topicName]; !ok {
+			topicPartitionMap[topicName] = meta.partitions
+		}
+	}
+
+	return topicPartitionMap
 }
 
 type opFunc func(topicName string, partition, offset int, msg types.Message) error
@@ -98,7 +117,7 @@ func (m *metadataStore) incrementOffsetIfExpected(topicName string, msg types.Me
 	partition := getPartition(msg.Key, meta.partitions)
 	nextOffset := meta.offset + 1
 	if nextOffset != msg.Offset {
-		return msg.Offset, nil
+		return meta.offset, nil
 	}
 	if err := op(topicName, partition, nextOffset, msg); err != nil {
 		return 0, err

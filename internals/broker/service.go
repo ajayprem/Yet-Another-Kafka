@@ -47,11 +47,14 @@ func NewService(id int, address string, zookeeperURL string) (*Service, error) {
 		zookeeper:     newZookeeper(zookeeperURL),
 		metadataStore: metadataStore,
 		logStore:      logStore,
+		followerStore: newFollowerStore(),
 		consumerStore: newConsumerStore(),
 	}, nil
 }
 
 // Register the broker with zookeeper
+// First request without sync, if leader then stop here
+// If not leader then sync with leader and re-register with zookeeper
 func (s *Service) RegisterWithZookeeper() error {
 	if !retry.Do(REGISTER_SYNC_MAX_RETRY, REGISTER_SYNC_BASE_DELAY, REGISTER_SYNC_MAX_DELAY, func() bool {
 		// register with zookeeper to find the leader
@@ -95,7 +98,6 @@ func (s *Service) setLeader() {
 	s.isLeader = true
 }
 
-// TODO: gate it for the followers
 func (s *Service) createTopic(topicName string, partitions int) error {
 	if s.metadataStore.doesTopicExist(topicName) {
 		return fmt.Errorf("topic name already exists")
@@ -107,10 +109,13 @@ func (s *Service) createTopic(topicName string, partitions int) error {
 	}
 	s.metadataStore.addTopicMetadata(topicName, partitions, -1)
 	s.logf("created topic:%s with partitions:%d", topicName, partitions)
-	go s.followerStore.createTopic(topicName, partitions)
+	if s.isLeader {
+		go s.followerStore.createTopic(topicName, partitions)
+	}
 	return nil
 }
 
+// leader function to produce messages, notify followers as well as consumners
 func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	if !s.metadataStore.doesTopicExist(topicName) {
 		return fmt.Errorf("topic(%s) does not exist", topicName)
@@ -123,14 +128,14 @@ func (s *Service) produceMessage(topicName string, msg types.Message) error {
 	}
 
 	go s.consumerStore.notifyConsumers(topicName, msg)
-	go s.followerStore.applyMessage(topicName, msg)
+	go s.followerStore.applyMessage(topicName, s.metadataStore.getTopicPartitions(topicName), msg)
 	return nil
 }
 
-// apply messages produced by the leader
-func (s *Service) apply(topicName string, msg types.Message) (int, error) {
+// follower function to apply messages produced by the leader
+func (s *Service) apply(topicName string, partitions int, msg types.Message) (int, error) {
 	if !s.metadataStore.doesTopicExist(topicName) {
-		return -1, nil
+		s.createTopic(topicName, partitions)
 	}
 
 	// increment offset and log append as one atomic operation
@@ -146,6 +151,8 @@ func (s *Service) apply(topicName string, msg types.Message) (int, error) {
 	return lastOffset, nil
 }
 
+// any broker can get the following request to register consumers
+// send all messages for consumers with fromBeginning set to true
 func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool) error {
 	c := &consumer{consumerURL}
 	s.consumerStore.addConsumer(c, topicName)
@@ -167,10 +174,29 @@ func (s *Service) registerConsumer(topicName, consumerURL string, fromBegin bool
 	return nil
 }
 
+// sync section
+// this process takes place during register with zookeeper
+
+func (s *Service) syncWithLeader() error {
+	topicMessages, err := s.leader.sync(s.address, s.metadataStore.generateSyncRequest())
+	if err != nil {
+		return err
+	}
+	var wg sync.WaitGroup
+	for _, t := range topicMessages {
+		wg.Add(1)
+		go s.syncApplyMessages(t.TopicName, t.Partitions, t.Messages)
+	}
+	wg.Wait()
+	return nil
+}
+
 // TODO: currently implemented by using existing append method, but this wastes CPU as a file
 // is repeatedly opened and closed for long messages.
-// TODO: we assume offset sent by leader is always safe to apply, fix this
-func (s *Service) applyMessages(topicName string, messages []types.Message) {
+func (s *Service) syncApplyMessages(topicName string, partitions int, messages []types.Message) {
+	if !s.metadataStore.doesTopicExist(topicName) {
+		s.createTopic(topicName, partitions)
+	}
 	for _, msg := range messages {
 		// increment offset and log append as one atomic operation
 		if err := s.metadataStore.incrementOffset(topicName, msg, s.logStore.appendRecord); err != nil {
@@ -180,28 +206,14 @@ func (s *Service) applyMessages(topicName string, messages []types.Message) {
 	}
 }
 
-func (s *Service) syncWithLeader() error {
-	topicMessages, err := s.leader.sync(s.metadataStore.generateSyncRequest())
-	if err != nil {
-		return err
-	}
-	var wg sync.WaitGroup
-	for _, t := range topicMessages.TopicMessageList {
-		wg.Add(1)
-		go s.applyMessages(t.TopicName, t.Messages)
-	}
-	wg.Wait()
-	return nil
-}
-
 // send messages from a given offset to the follower
-func (s *Service) syncMessages(req types.SyncRequest) (types.SyncResponse, error) {
+func (s *Service) syncMessages(followerAddress string, topicOffsetMap map[string]int) (types.SyncResponse, error) {
 	var result types.SyncResponse
 
-	for _, t := range req.TopicOffsetList {
+	for topicName, offset := range topicOffsetMap {
 		var messagesFromOffset []types.Message
-		if err := s.metadataStore.withReadLock(t.TopicName, func() error {
-			messages, err := s.logStore.getMessagesFromOffset(t.TopicName, t.Offset)
+		if err := s.metadataStore.withReadLock(topicName, func() error {
+			messages, err := s.logStore.getMessagesFromOffset(topicName, offset+1)
 			if err != nil {
 				return err
 			}
@@ -211,9 +223,26 @@ func (s *Service) syncMessages(req types.SyncRequest) (types.SyncResponse, error
 			log.Printf("error sycning messages:%s", err)
 			return types.SyncResponse{}, fmt.Errorf("error syncing messages")
 		}
-		result.TopicMessageList = append(result.TopicMessageList, types.TopicMessage{TopicName: t.TopicName, Messages: messagesFromOffset})
+		result.TopicMessageList = append(result.TopicMessageList, types.TopicMessage{TopicName: topicName, Messages: messagesFromOffset})
 	}
 
+	for topicName, partitions := range s.metadataStore.getAllTopicNamesNotInMap(topicOffsetMap) {
+		var messagesFromOffset []types.Message
+		if err := s.metadataStore.withReadLock(topicName, func() error {
+			messages, err := s.logStore.getMessagesFromOffset(topicName, 0)
+			if err != nil {
+				return err
+			}
+			messagesFromOffset = messages
+			return nil
+		}); err != nil {
+			log.Printf("error sycning messages:%s", err)
+			return types.SyncResponse{}, fmt.Errorf("error syncing messages")
+		}
+		result.TopicMessageList = append(result.TopicMessageList, types.TopicMessage{TopicName: topicName, Messages: messagesFromOffset, Partitions: partitions})
+	}
+
+	s.followerStore.addFolower(newFollower(followerAddress))
 	return result, nil
 }
 
@@ -222,7 +251,10 @@ func (s *Service) logf(format string, args ...any) {
 	log.Printf(prefix+format, args...)
 }
 
-func (s *Service) runBackfillWorker() {
+// backfill section
+// on gap detection, requests are sent to leader to backfill the follower from the missing messages
+
+func (s *Service) RunBackfillWorker() {
 	for req := range s.followerStore.backfillCh {
 		s.backfillFollower(req)
 	}
@@ -232,7 +264,7 @@ func (s *Service) backfillFollower(req backfillRequest) {
 	var messagesFromOffset []types.Message
 
 	if err := s.metadataStore.withReadLock(req.topicName, func() error {
-		messages, err := s.logStore.getMessagesFromOffset(req.topicName, req.lastOffset)
+		messages, err := s.logStore.getMessagesFromOffset(req.topicName, req.lastOffset+1)
 		if err != nil {
 			return err
 		}
@@ -244,7 +276,7 @@ func (s *Service) backfillFollower(req backfillRequest) {
 	}
 
 	for _, message := range messagesFromOffset {
-		lastOffset, err := req.follower.apply(req.topicName, message)
+		lastOffset, err := req.follower.apply(req.topicName, s.metadataStore.getTopicPartitions(req.topicName), message)
 		if err != nil {
 			log.Printf("error backfilling follower(%s):%s", req.follower.address, err)
 			return

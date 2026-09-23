@@ -36,6 +36,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	go service.RunBackfillWorker()
+
 	if err := service.RegisterWithZookeeper(); err != nil {
 		log.Fatal(err)
 	}
